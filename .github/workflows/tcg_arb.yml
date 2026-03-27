@@ -1,0 +1,51 @@
+name: TCG Arbitrage Search
+
+on:
+  schedule:
+    # Every 2 days at 10:00 UTC. Note: cron "*/2" counts from the 1st of each
+    # month, so this is an approximation of "every 48 hours".
+    - cron: '0 10 */2 * *'
+  workflow_dispatch:  # also allows manual runs from the GitHub Actions UI
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300  # 5-hour safety cap
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run TCG arbitrage workflow
+        run: python src/main.py
+        env:
+          EBAY_CLIENT_ID: ${{ secrets.EBAY_CLIENT_ID }}
+          EBAY_CLIENT_SECRET: ${{ secrets.EBAY_CLIENT_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          # Table name in Supabase — change if yours differs
+          SUPABASE_DISMISSED_TABLE: dismissed_cards
+          TCG_CATEGORY: pokemon
+          TCG_MIN_PRICE: '18'
+          TCG_MAX_PRICE: '1800'
+          BUYER_COUNTRY: US
+          BUYER_ZIP: '21015'
+          MAX_AUCTION_DAYS: '2'
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          # Artifact name includes the run number so multiple runs don't collide
+          name: tcg-results-${{ github.run_number }}
+          path: output/
+          retention-days: 30
