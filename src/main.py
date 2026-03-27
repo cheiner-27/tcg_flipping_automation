@@ -9,7 +9,7 @@ import config
 from tcgcsv_scraper import fetch_tcg_data
 from filter_tcg import filter_tcg_data
 from ebay_search import search_all_terms
-from transform_results import transform_results
+from transform_results import merge_with_tcg, apply_filters
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'output')
 
@@ -17,17 +17,18 @@ TCG_FIELDS = [
     'productId', 'group', 'name', 'ext_num', 'cleanName',
     'searchTerm', 'url', 'subTypeName', 'lowPrice', 'midPrice', 'marketPrice',
 ]
-EBAY_RAW_FIELDS = [
-    'search_term', 'item_id', 'title', 'auction_price', 'buy_it_now_price',
-    'shipping_cost', 'currency', 'time_remaining_seconds', 'url', 'card_condition',
-]
-FINAL_FIELDS = [
-    'search_term', 'item_id', 'title', 'auction_price', 'buy_it_now_price',
-    'shipping_cost', 'time_remaining', 'url', 'card_condition',
-    'tcg_product_id', 'tcg_url', 'subTypeName',
-    'lowPrice', 'midPrice', 'marketPrice',
-    'buy_it_now_total', 'auction_total', 'roi',
-]
+
+
+def _merged_fields(category: str) -> list:
+    """Column order matching the old PowerQuery output format."""
+    p = f'tcglist_{category}'
+    return [
+        'search_term', 'item_id', 'title', 'auction_price', 'buy_it_now_price',
+        'shipping_cost', 'url',
+        f'{p}.productId', f'{p}.searchTerm', f'{p}.url', f'{p}.subTypeName',
+        f'{p}.lowPrice', f'{p}.midPrice', f'{p}.marketPrice',
+        'Total Time', 'buy_it_now_total', 'auction_total', 'ROI',
+    ]
 
 
 def _save_csv(data: list, filepath: str, fieldnames: list) -> None:
@@ -73,6 +74,7 @@ def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     cat = config.TCG_CATEGORY
     date_str = datetime.now().strftime('%Y%m%d')
+    merged_fields = _merged_fields(cat)
 
     print('=== Step 1: Fetch TCG data ===')
     tcg_data = fetch_tcg_data(cat, min_price=config.TCG_MIN_PRICE, max_price=config.TCG_MAX_PRICE)
@@ -88,14 +90,17 @@ def main():
     print('\n=== Step 4: Search eBay ===')
     search_terms = [row['searchTerm'] for row in filtered]
     ebay_raw = search_all_terms(search_terms)
-    _save_csv(ebay_raw, os.path.join(OUTPUT_DIR, f'{cat}_results_raw.csv'), EBAY_RAW_FIELDS)
 
-    print('\n=== Step 5: Transform & filter results ===')
-    final = transform_results(ebay_raw, tcg_data)
-    output_path = os.path.join(OUTPUT_DIR, f'{date_str}_{cat.upper()}_results.csv')
-    _save_csv(final, output_path, FINAL_FIELDS)
+    print('\n=== Step 5: Merge with TCG data ===')
+    merged = merge_with_tcg(ebay_raw, tcg_data, cat)
+    # This file matches the old PowerQuery format — upload this to your tool
+    _save_csv(merged, os.path.join(OUTPUT_DIR, f'{cat}_results_raw.csv'), merged_fields)
 
-    print(f'\nDone. {len(final)} opportunities written to output/')
+    print('\n=== Step 6: Apply filters ===')
+    final = apply_filters(merged)
+    _save_csv(final, os.path.join(OUTPUT_DIR, f'{date_str}_{cat.upper()}_results.csv'), merged_fields)
+
+    print(f'\nDone. {len(final)} opportunities in final results ({len(merged)} pre-filter).')
 
 
 if __name__ == '__main__':
