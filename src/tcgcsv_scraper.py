@@ -1,3 +1,4 @@
+import time
 import requests
 
 CATEGORIES = {
@@ -7,15 +8,23 @@ CATEGORIES = {
     'lorcana': '72',
 }
 
+HEADERS = {"User-Agent": "TCGFlippingAutomation/1.0.0"}
+REQUEST_DELAY = 0.1  # seconds between requests, per tcgcsv.com usage guidelines
+
+
+def _get(url):
+    r = requests.get(url, headers=HEADERS)
+    r.raise_for_status()
+    time.sleep(REQUEST_DELAY)
+    return r
+
 
 def fetch_tcg_data(category_name, min_price=None, max_price=None):
     category_id = CATEGORIES.get(category_name.lower())
     if not category_id:
         raise ValueError(f"Unknown category: {category_name!r}. Valid: {list(CATEGORIES)}")
 
-    r = requests.get(f"https://tcgcsv.com/tcgplayer/{category_id}/groups")
-    r.raise_for_status()
-    all_groups = r.json()['results']
+    all_groups = _get(f"https://tcgcsv.com/tcgplayer/{category_id}/groups").json()['results']
 
     all_data = []
 
@@ -23,13 +32,8 @@ def fetch_tcg_data(category_name, min_price=None, max_price=None):
         group_id = group['groupId']
         group_name = group['name']
 
-        r = requests.get(f"https://tcgcsv.com/tcgplayer/{category_id}/{group_id}/products")
-        r.raise_for_status()
-        products = r.json()['results']
-
-        r = requests.get(f"https://tcgcsv.com/tcgplayer/{category_id}/{group_id}/prices")
-        r.raise_for_status()
-        prices = r.json()['results']
+        products = _get(f"https://tcgcsv.com/tcgplayer/{category_id}/{group_id}/products").json()['results']
+        prices = _get(f"https://tcgcsv.com/tcgplayer/{category_id}/{group_id}/prices").json()['results']
 
         price_dict = {p['productId']: p for p in prices}
 
