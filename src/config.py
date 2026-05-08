@@ -8,8 +8,8 @@ SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 SUPABASE_DISMISSED_TABLE = os.environ.get('SUPABASE_DISMISSED_TABLE', 'dismissed_cards')
 
 TCG_CATEGORY = os.environ.get('TCG_CATEGORY', 'pokemon')
-TCG_MIN_PRICE = float(os.environ.get('TCG_MIN_PRICE', '18'))
-TCG_MAX_PRICE = float(os.environ.get('TCG_MAX_PRICE', '1800'))
+TCG_MIN_PRICE = float(os.environ.get('TCG_MIN_PRICE', '15'))
+TCG_MAX_PRICE = float(os.environ.get('TCG_MAX_PRICE', '2000'))
 
 BUYER_COUNTRY = os.environ.get('BUYER_COUNTRY', 'US')
 BUYER_ZIP = os.environ.get('BUYER_ZIP', '21015')

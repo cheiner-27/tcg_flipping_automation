@@ -1,0 +1,16 @@
+let
+    Source = Csv.Document(File.Contents("C:\Users\chrsh\Documents\01. Programming\06. TCG Arb\tcglist_pokemon.csv"),[Delimiter=",", Columns=11, Encoding=1252, QuoteStyle=QuoteStyle.None]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"productId", Int64.Type}, {"group", type text}, {"name", type text}, {"ext_num", type text}, {"cleanName", type text}, {"searchTerm", type text}, {"url", type text}, {"subTypeName", type text}, {"lowPrice", type number}, {"midPrice", type number}, {"marketPrice", type number}}),
+    #"Filtered Rows" = Table.SelectRows(#"Changed Type", each not Text.Contains([name], "Booster") and not Text.Contains([name], "3 Pack") and not Text.Contains([name], "Blister") and not Text.Contains([name], "Battle Box") and not Text.Contains([name], "Exclusive") and not Text.Contains([name], "Elite Trainer")),
+    #"Filtered Rows1" = Table.SelectRows(#"Filtered Rows", each ([group] <> "POP Series 1" and [group] <> "POP Series 2" and [group] <> "POP Series 3" and [group] <> "POP Series 4" and [group] <> "POP Series 5" and [group] <> "POP Series 6" and [group] <> "POP Series 7" and [group] <> "POP Series 8" and [group] <> "POP Series 9" and [group] <> "Prize Pack Series Cards" and [group] <> "Trick or Trade BOOster Bundle 2023" and [group] <> "Trick or Trade BOOster Bundle 2024")),
+    #"Filtered Rows2" = Table.SelectRows(#"Filtered Rows1", each not Text.Contains([group], "Jumbo")),
+    #"Merged Queries" = Table.FuzzyNestedJoin(#"Filtered Rows2", {"searchTerm"}, #"Dismissed cards", {"Column1"}, "Dismissed cards", JoinKind.LeftOuter, [IgnoreCase=false, IgnoreSpace=false, NumberOfMatches=1, Threshold=0.89]),
+    #"Expanded Dismissed cards" = Table.ExpandTableColumn(#"Merged Queries", "Dismissed cards", {"Column1"}, {"Dismissed cards.Column1"}),
+    #"Filtered Rows3" = Table.SelectRows(#"Expanded Dismissed cards", each ([Dismissed cards.Column1] = null)),
+    #"Removed Columns" = Table.RemoveColumns(#"Filtered Rows3",{"Dismissed cards.Column1"}),
+    #"Remove Mini Tin and Collection" = Table.SelectRows(#"Removed Columns", each not Text.Contains([name], "Mini Tin") and not Text.Contains([name], "Collection")),
+    #"Remove Championship Cards" = Table.SelectRows(#"Remove Mini Tin and Collection", each not Text.Contains([group], "Championship")),
+    #"Remove Theme Deck" = Table.SelectRows(#"Remove Championship Cards", each not Text.Contains([name], "Theme Deck"))
+in
+    #"Remove Theme Deck"

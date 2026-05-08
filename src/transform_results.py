@@ -5,9 +5,9 @@ import config
 
 # Title exclusion lists — all matched case-insensitively against lowercased title
 GRADING_TERMS    = ['psa', 'cgc', 'bgs']
-CONDITION_TERMS  = [' mp', '/mp', ' hp', '/hp', 'moderate', 'heavily', 'heavy', '(hp)', 'lp-']
-DAMAGE_TERMS     = ['dmg', 'damage']
-LANGUAGE_TERMS   = ['japan', 'japanese', 'jpn', 'korean', 'chinese', 'spanish', 'italian', '(cn)']
+CONDITION_TERMS  = [' mp', '/mp', ' hp', '/hp', 'moderate', 'heavily', 'heavy', '(hp)', 'lp-', ' lp', 'lightly']
+DAMAGE_TERMS     = ['dmg', 'damage', 'see photo']
+LANGUAGE_TERMS   = ['japan', 'japanese', 'jpn', 'korean', 'chinese', 'spanish', 'italian', '(cn)', 'portuguese']
 JUMBO_TERMS      = ['jumbo', 'oversized']
 SEARCH_TERM_EXCL = ['diy', 'hand drawn']
 

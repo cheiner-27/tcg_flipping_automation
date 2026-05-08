@@ -1,0 +1,540 @@
+let
+    Source = Csv.Document(File.Contents("C:\Users\chrsh\Documents\01. Programming\06. TCG Arb\pokemon_results_nm_only.csv"),[Delimiter=",", Columns=10, Encoding=65001, QuoteStyle=QuoteStyle.None]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Correct Column Types" = Table.TransformColumnTypes(#"Promoted Headers",{{"search_term", type text}, {"status", type text}, {"item_id", type text}, {"title", type text}, {"shipping_cost", type number}, {"auction_price", type number}, {"buy_it_now_price", type number}, {"currency", type text}, {"time_remaining", type text}, {"url", type text}}),
+    #"*Merge TCG and EBAY" = Table.NestedJoin(#"Correct Column Types", {"search_term"}, tcglist_pokemon, {"searchTerm"}, "tcglist_pokemon", JoinKind.LeftOuter),
+    #"*Expand after merge" = Table.ExpandTableColumn(#"*Merge TCG and EBAY", "tcglist_pokemon", {"productId", "group", "name", "cleanName", "searchTerm", "url", "subTypeName", "lowPrice", "midPrice", "marketPrice"}, {"tcglist_pokemon.productId", "tcglist_pokemon.group", "tcglist_pokemon.name", "tcglist_pokemon.cleanName", "tcglist_pokemon.searchTerm", "tcglist_pokemon.url", "tcglist_pokemon.subTypeName", "tcglist_pokemon.lowPrice", "tcglist_pokemon.midPrice", "tcglist_pokemon.marketPrice"}),
+    #"*Removed Columns" = Table.RemoveColumns(#"*Expand after merge",{"tcglist_pokemon.group", "tcglist_pokemon.name", "tcglist_pokemon.cleanName", "status", "currency"}),
+    #"Filter for Grading" = Table.SelectRows(#"*Removed Columns", each not Text.Contains([title], "psa") and not Text.Contains([title], "cgc") and not Text.Contains([title], "Psa") and not Text.Contains([title], "PSA") and not Text.Contains([title], "CgC") and not Text.Contains([title], "CGC") and not Text.Contains([title], "BGS") and not Text.Contains([title], "bgs") and not Text.Contains([title], "Bgs")),
+    #"Filter for MP/HP" = Table.SelectRows(#"Filter for Grading", each not Text.Contains([title], " mp") and not Text.Contains([title], "/mp") and not Text.Contains([title], " hp") and not Text.Contains([title], "/hp") and not Text.Contains([title], " MP") and not Text.Contains([title], "/MP") and not Text.Contains([title], " HP") and not Text.Contains([title], "/HP") and not Text.Contains([title], "MODERATE") and not Text.Contains([title], "moderate") and not Text.Contains([title], "Moderate") and not Text.Contains([title], "heavily") and not Text.Contains([title], "Heavily") and not Text.Contains([title], "HEAVILY") and not Text.Contains([title], "HEAVY") and not Text.Contains([title], "heavy") and not Text.Contains([title], "Heavy") and not Text.Contains([title], "(HP)") and not Text.Contains([title], "(hp)") and not Text.Contains([title], "LP-")),
+    #"Filter for Damaged" = Table.SelectRows(#"Filter for MP/HP", each not Text.Contains([title], "DMG") and not Text.Contains([title], "Damage") and not Text.Contains([title], "DAMAGE") and not Text.Contains([title], "damage")),
+    #"Get days Split" = Table.SplitColumn(#"Filter for Damaged", "time_remaining", Splitter.SplitTextByEachDelimiter({"d"}, QuoteStyle.None, false), {"time_remaining.1", "time_remaining.2"}),
+    #"Add Time or Days Column" = Table.AddColumn(#"Get days Split", "Time or Days", each 
+if Text.Length([time_remaining.1]) > 2 then "time" 
+else if Text.Length([time_remaining.1]) < 1 then "blank" 
+else "days"
+),
+    #"Split Column by Delimiter" = Table.SplitColumn(#"Add Time or Days Column", "time_remaining.2", Splitter.SplitTextByEachDelimiter({" "}, QuoteStyle.Csv, false), {"time_remaining.2.1", "time_remaining.2.2"}),
+    #"Remove Calc Column" = Table.RemoveColumns(#"Split Column by Delimiter",{"time_remaining.2.1"}),
+    #"Time 1 Correction Column" = Table.AddColumn(#"Remove Calc Column", "Time 1 Fix", each if Text.Length([time_remaining.1]) > 2 then [time_remaining.1] else if Text.Length([time_remaining.1]) < 2 then #duration(0,0,0,0) else #duration(Number.FromText([time_remaining.1]),0,0,0)),
+    #"Time Column Type Change" = Table.TransformColumnTypes(#"Time 1 Correction Column",{{"Time 1 Fix", type duration}, {"time_remaining.2.2", type duration}}),
+    #"Null Time to 0" = Table.ReplaceValue(#"Time Column Type Change",null,#duration(0, 0, 0, 0),Replacer.ReplaceValue,{"time_remaining.2.2"}),
+    #"Total Time Column" = Table.AddColumn(#"Null Time to 0", "Total Time", each [time_remaining.2.2] + [Time 1 Fix]),
+    #"Change Total Time Type" = Table.TransformColumnTypes(#"Total Time Column",{{"Total Time", type duration}}),
+    #"Remove More Time Columns" = Table.RemoveColumns(#"Change Total Time Type",{"Time or Days", "Time 1 Fix", "time_remaining.1", "time_remaining.2.2"}),
+    #"Add Buy It Now Total" = Table.AddColumn(#"Remove More Time Columns", "buy_it_now_total", each [buy_it_now_price]+[shipping_cost]),
+    #"Add Auction Total" = Table.AddColumn(#"Add Buy It Now Total", "auction_total", each if[auction_price] <> null then [auction_price]+[shipping_cost] else [auction_price]),
+    #"Added Custom" = Table.AddColumn(#"Add Auction Total", "ROI", each [buy_it_now_total]/[tcglist_pokemon.lowPrice]),
+    #"Filter Language" = Table.SelectRows(#"Added Custom", each not Text.Contains([title], "JAPAN") and not Text.Contains([title], "Japan") and not Text.Contains([title], "Japanese") and not Text.Contains([title], "JPN") and not Text.Contains([title], "japanese") and not Text.Contains([title], "Korean") and not Text.Contains([title], "KOREAN") and not Text.Contains([title], "Chinese") and not Text.Contains([title], "CHINESE") and not Text.Contains([title], "Spanish") and not Text.Contains([title], "SPANISH") and not Text.Contains([title], "chinese") and not Text.Contains([title], "korean") and not Text.Contains([title], "spanish") and not Text.Contains([title], "(CN)") and not Text.Contains([title], "Italian") and not Text.Contains([title], "ITALIAN") and not Text.Contains([title], "italian")),
+    #"Filter Art Case" = Table.SelectRows(#"Filter Language", each not Text.Contains([title], "ART CASE") and not Text.Contains([title], "art case") and not Text.Contains([title], "Art Case")),
+    #"Add Shadowless Check" = Table.AddColumn(#"Filter Art Case", "ShadowlessCheck", each if Text.Contains([search_term], "shadowless", Comparer.OrdinalIgnoreCase) 
+    then 
+        if Text.Contains([title], "shadowless", Comparer.OrdinalIgnoreCase) 
+            or Text.Contains([title], "bss", Comparer.OrdinalIgnoreCase) 
+        then 1 else 0
+    else 1),
+    #"Check Shadowless" = Table.SelectRows(#"Add Shadowless Check", each ([ShadowlessCheck] = 1)),
+    #"Removed Columns" = Table.RemoveColumns(#"Check Shadowless",{"ShadowlessCheck"}),
+    #"Filtered Rows" = Table.SelectRows(#"Removed Columns", each [Total Time] <= #duration(1, 0, 0, 0)),
+    #"SWSH Check" = Table.AddColumn(#"Filtered Rows", "SWSH Check", each let
+    txtA = [search_term],
+    txtB = [title],
+    pos  = Text.PositionOf(txtA, "SWSH", Occurrence.First),
+
+    result =
+        if pos = -1 then
+            1
+        else
+            let
+                // position right after "SWSH"
+                afterTagPos = pos + 4,
+                // make sure there ARE 3 chars after it
+                canExtract = Text.Length(txtA) >= afterTagPos + 3,
+                code =
+                    if canExtract
+                    then Text.Middle(txtA, afterTagPos, 3)
+                    else null
+            in
+                if code = null then
+                    1        // "SWSH" but not enough characters after -> treat as pass
+                else if Text.Contains(txtB, code) then
+                    1
+                else
+                    0
+in
+    result),
+    #"SWSH Filter" = Table.SelectRows(#"SWSH Check", each ([SWSH Check] = 1)),
+    #"XY Check" = Table.AddColumn(#"SWSH Filter", "XY Check", each let
+    txtA = [search_term],
+    txtB = [title],
+
+    // Short-circuit nulls => treat as "no check required"
+    resultIfNull =
+        if txtA = null or txtB = null then
+            1
+        else
+            null,
+
+    // helper: is one character a digit 0-9 ?
+    IsDigit =
+        (c as text) as logical =>
+            // c should be length 1; if not, it's not a digit
+            if Text.Length(c) <> 1 then
+                false
+            else
+                (c >= "0" and c <= "9"),
+
+    // Extract a run of consecutive digits starting at startPos
+    ExtractDigitsAfterPrefixOnce =
+        (fullText as text, startPos as number) as text =>
+            let
+                remaining = Text.Middle(fullText, startPos),
+                charList  = Text.ToList(remaining),
+
+                GetRun =
+                    (lst as list, acc as list) as list =>
+                        if List.IsEmpty(lst) then
+                            acc
+                        else
+                            let
+                                c = lst{0}
+                            in
+                                if IsDigit(c) then
+                                    @GetRun(List.Skip(lst, 1), acc & {c})
+                                else
+                                    acc,
+
+                runList = GetRun(charList, {}),
+                token   = Text.Combine(runList, "")
+            in
+                token,
+
+    // Find next "XY" (case-insensitive) at or after 'offset'.
+    // Returns absolute position or -1 if not found.
+    FindNextPrefixAtOrAfter =
+        (fullTextUpper as text, prefixUpper as text, offset as number) as number =>
+            let
+                subText  = Text.Middle(fullTextUpper, offset),
+                localPos = Text.PositionOf(subText, prefixUpper, Occurrence.First),
+                absPos   = if localPos = -1 then -1 else localPos + offset
+            in
+                absPos,
+
+    // Collect ALL digit runs that immediately follow XY.
+    // "XY120" -> "120"
+    // Standalone "XY" -> ignored
+    GetAllPrefixCodes =
+        (fullText as text, prefix as text) as list =>
+            let
+                fullTextUpper = Text.Upper(fullText),
+                prefixUpper   = Text.Upper(prefix),
+
+                Scan =
+                    (offset as number, found as list) as list =>
+                        let
+                            posPrefix = FindNextPrefixAtOrAfter(fullTextUpper, prefixUpper, offset)
+                        in
+                            if posPrefix = -1 then
+                                found
+                            else
+                                let
+                                    startDigitsPos = posPrefix + Text.Length(prefixUpper),
+                                    digits         = ExtractDigitsAfterPrefixOnce(fullText, startDigitsPos),
+                                    newFound =
+                                        if digits = "" then
+                                            found
+                                        else
+                                            found & {digits}
+                                in
+                                    @Scan(posPrefix + Text.Length(prefixUpper), newFound),
+
+                allFound      = Scan(0, {}),
+                distinctFound = List.Distinct(allFound)
+            in
+                distinctFound,
+
+    finalResult =
+        if resultIfNull <> null then
+            resultIfNull
+        else
+            let
+                xyA = GetAllPrefixCodes(txtA, "XY"),
+                xyB = GetAllPrefixCodes(txtB, "XY"),
+
+                resultCheck =
+                    if List.IsEmpty(xyA) then
+                        1
+                    else if List.IsEmpty(xyB) then
+                        1
+                    else
+                        let
+                            codeChecks =
+                                List.Transform(
+                                    xyA,
+                                    (codeA) => List.Contains(xyB, codeA)
+                                ),
+                            anyMissing = List.Contains(codeChecks, false)
+                        in
+                            if anyMissing then 0 else 1
+            in
+                resultCheck
+in
+    finalResult),
+    #"XY Filter" = Table.SelectRows(#"XY Check", each ([XY Check] = 1)),
+    #"SM Check" = Table.AddColumn(#"XY Filter", "SM Check", each let
+    txtA = [search_term],
+    txtB = [title],
+
+    // Short-circuit nulls => treat as "no check required"
+    resultIfNull =
+        if txtA = null or txtB = null then
+            1
+        else
+            null,
+
+    // helper: is one character a digit 0-9 ?
+    IsDigit =
+        (c as text) as logical =>
+            // c should be length 1; if not, it's not a digit
+            if Text.Length(c) <> 1 then
+                false
+            else
+                (c >= "0" and c <= "9"),
+
+    // Extract a run of consecutive digits starting at startPos
+    ExtractDigitsAfterPrefixOnce =
+        (fullText as text, startPos as number) as text =>
+            let
+                remaining = Text.Middle(fullText, startPos),
+                charList  = Text.ToList(remaining),
+
+                GetRun =
+                    (lst as list, acc as list) as list =>
+                        if List.IsEmpty(lst) then
+                            acc
+                        else
+                            let
+                                c = lst{0}
+                            in
+                                if IsDigit(c) then
+                                    @GetRun(List.Skip(lst, 1), acc & {c})
+                                else
+                                    acc,
+
+                runList = GetRun(charList, {}),
+                token   = Text.Combine(runList, "")
+            in
+                token,
+
+    // Find next "SM" (case-insensitive) at or after 'offset'.
+    // Returns absolute position or -1 if not found.
+    FindNextPrefixAtOrAfter =
+        (fullTextUpper as text, prefixUpper as text, offset as number) as number =>
+            let
+                subText  = Text.Middle(fullTextUpper, offset),
+                localPos = Text.PositionOf(subText, prefixUpper, Occurrence.First),
+                absPos   = if localPos = -1 then -1 else localPos + offset
+            in
+                absPos,
+
+    // Collect ALL digit runs that immediately follow SM.
+    // "SM120" -> "120"
+    // Standalone "SM" -> ignored
+    GetAllPrefixCodes =
+        (fullText as text, prefix as text) as list =>
+            let
+                fullTextUpper = Text.Upper(fullText),
+                prefixUpper   = Text.Upper(prefix),
+
+                Scan =
+                    (offset as number, found as list) as list =>
+                        let
+                            posPrefix = FindNextPrefixAtOrAfter(fullTextUpper, prefixUpper, offset)
+                        in
+                            if posPrefix = -1 then
+                                found
+                            else
+                                let
+                                    startDigitsPos = posPrefix + Text.Length(prefixUpper),
+                                    digits         = ExtractDigitsAfterPrefixOnce(fullText, startDigitsPos),
+                                    newFound =
+                                        if digits = "" then
+                                            found
+                                        else
+                                            found & {digits}
+                                in
+                                    @Scan(posPrefix + Text.Length(prefixUpper), newFound),
+
+                allFound      = Scan(0, {}),
+                distinctFound = List.Distinct(allFound)
+            in
+                distinctFound,
+
+    finalResult =
+        if resultIfNull <> null then
+            resultIfNull
+        else
+            let
+                smA = GetAllPrefixCodes(txtA, "SM"),
+                smB = GetAllPrefixCodes(txtB, "SM"),
+
+                resultCheck =
+                    if List.IsEmpty(smA) then
+                        1
+                    else if List.IsEmpty(smB) then
+                        1
+                    else
+                        let
+                            codeChecks =
+                                List.Transform(
+                                    smA,
+                                    (codeA) => List.Contains(smB, codeA)
+                                ),
+                            anyMissing = List.Contains(codeChecks, false)
+                        in
+                            if anyMissing then 0 else 1
+            in
+                resultCheck
+in
+    finalResult),
+    #"SM Filter" = Table.SelectRows(#"SM Check", each ([SM Check] = 1)),
+    #"BW Check" = Table.AddColumn(#"SM Filter", "BW Check", each let
+    txtA = [search_term],
+    txtB = [title],
+
+    // Short-circuit nulls => treat as "no check required"
+    resultIfNull =
+        if txtA = null or txtB = null then
+            1
+        else
+            null,
+
+    // helper: is one character a digit 0-9 ?
+    IsDigit =
+        (c as text) as logical =>
+            // c should be length 1; if not, it's not a digit
+            if Text.Length(c) <> 1 then
+                false
+            else
+                (c >= "0" and c <= "9"),
+
+    // Extract a run of consecutive digits starting at startPos
+    ExtractDigitsAfterPrefixOnce =
+        (fullText as text, startPos as number) as text =>
+            let
+                remaining = Text.Middle(fullText, startPos),
+                charList  = Text.ToList(remaining),
+
+                GetRun =
+                    (lst as list, acc as list) as list =>
+                        if List.IsEmpty(lst) then
+                            acc
+                        else
+                            let
+                                c = lst{0}
+                            in
+                                if IsDigit(c) then
+                                    @GetRun(List.Skip(lst, 1), acc & {c})
+                                else
+                                    acc,
+
+                runList = GetRun(charList, {}),
+                token   = Text.Combine(runList, "")
+            in
+                token,
+
+    // Find next "BW" (case-insensitive) at or after 'offset'.
+    // Returns absolute position or -1 if not found.
+    FindNextPrefixAtOrAfter =
+        (fullTextUpper as text, prefixUpper as text, offset as number) as number =>
+            let
+                subText  = Text.Middle(fullTextUpper, offset),
+                localPos = Text.PositionOf(subText, prefixUpper, Occurrence.First),
+                absPos   = if localPos = -1 then -1 else localPos + offset
+            in
+                absPos,
+
+    // Collect ALL digit runs that immediately follow BW.
+    // "BW120" -> "120"
+    // Standalone "BW" -> ignored
+    GetAllPrefixCodes =
+        (fullText as text, prefix as text) as list =>
+            let
+                fullTextUpper = Text.Upper(fullText),
+                prefixUpper   = Text.Upper(prefix),
+
+                Scan =
+                    (offset as number, found as list) as list =>
+                        let
+                            posPrefix = FindNextPrefixAtOrAfter(fullTextUpper, prefixUpper, offset)
+                        in
+                            if posPrefix = -1 then
+                                found
+                            else
+                                let
+                                    startDigitsPos = posPrefix + Text.Length(prefixUpper),
+                                    digits         = ExtractDigitsAfterPrefixOnce(fullText, startDigitsPos),
+                                    newFound =
+                                        if digits = "" then
+                                            found
+                                        else
+                                            found & {digits}
+                                in
+                                    @Scan(posPrefix + Text.Length(prefixUpper), newFound),
+
+                allFound      = Scan(0, {}),
+                distinctFound = List.Distinct(allFound)
+            in
+                distinctFound,
+
+    finalResult =
+        if resultIfNull <> null then
+            resultIfNull
+        else
+            let
+                bwA = GetAllPrefixCodes(txtA, "BW"),
+                bwB = GetAllPrefixCodes(txtB, "BW"),
+
+                resultCheck =
+                    if List.IsEmpty(bwA) then
+                        1
+                    else if List.IsEmpty(bwB) then
+                        1
+                    else
+                        let
+                            codeChecks =
+                                List.Transform(
+                                    bwA,
+                                    (codeA) => List.Contains(bwB, codeA)
+                                ),
+                            anyMissing = List.Contains(codeChecks, false)
+                        in
+                            if anyMissing then 0 else 1
+            in
+                resultCheck
+in
+    finalResult),
+    #"BW Filter" = Table.SelectRows(#"BW Check", each ([BW Check] = 1)),
+    #"DP Check" = Table.AddColumn(#"BW Filter", "DP Check", each let
+    txtA = [search_term],
+    txtB = [title],
+
+    // Short-circuit nulls => treat as "no check required"
+    resultIfNull =
+        if txtA = null or txtB = null then
+            1
+        else
+            null,
+
+    // helper: is one character a digit 0-9 ?
+    IsDigit =
+        (c as text) as logical =>
+            // c should be length 1; if not, it's not a digit
+            if Text.Length(c) <> 1 then
+                false
+            else
+                (c >= "0" and c <= "9"),
+
+    // Extract a run of consecutive digits starting at startPos
+    ExtractDigitsAfterPrefixOnce =
+        (fullText as text, startPos as number) as text =>
+            let
+                remaining = Text.Middle(fullText, startPos),
+                charList  = Text.ToList(remaining),
+
+                GetRun =
+                    (lst as list, acc as list) as list =>
+                        if List.IsEmpty(lst) then
+                            acc
+                        else
+                            let
+                                c = lst{0}
+                            in
+                                if IsDigit(c) then
+                                    @GetRun(List.Skip(lst, 1), acc & {c})
+                                else
+                                    acc,
+
+                runList = GetRun(charList, {}),
+                token   = Text.Combine(runList, "")
+            in
+                token,
+
+    // Find next "DP" (case-insensitive) at or after 'offset'.
+    // Returns absolute position or -1 if not found.
+    FindNextPrefixAtOrAfter =
+        (fullTextUpper as text, prefixUpper as text, offset as number) as number =>
+            let
+                subText  = Text.Middle(fullTextUpper, offset),
+                localPos = Text.PositionOf(subText, prefixUpper, Occurrence.First),
+                absPos   = if localPos = -1 then -1 else localPos + offset
+            in
+                absPos,
+
+    // Collect ALL digit runs that immediately follow DP.
+    // "DP120" -> "120"
+    // Standalone "DP" -> ignored
+    GetAllPrefixCodes =
+        (fullText as text, prefix as text) as list =>
+            let
+                fullTextUpper = Text.Upper(fullText),
+                prefixUpper   = Text.Upper(prefix),
+
+                Scan =
+                    (offset as number, found as list) as list =>
+                        let
+                            posPrefix = FindNextPrefixAtOrAfter(fullTextUpper, prefixUpper, offset)
+                        in
+                            if posPrefix = -1 then
+                                found
+                            else
+                                let
+                                    startDigitsPos = posPrefix + Text.Length(prefixUpper),
+                                    digits         = ExtractDigitsAfterPrefixOnce(fullText, startDigitsPos),
+                                    newFound =
+                                        if digits = "" then
+                                            found
+                                        else
+                                            found & {digits}
+                                in
+                                    @Scan(posPrefix + Text.Length(prefixUpper), newFound),
+
+                allFound      = Scan(0, {}),
+                distinctFound = List.Distinct(allFound)
+            in
+                distinctFound,
+
+    finalResult =
+        if resultIfNull <> null then
+            resultIfNull
+        else
+            let
+                dpA = GetAllPrefixCodes(txtA, "DP"),
+                dpB = GetAllPrefixCodes(txtB, "DP"),
+
+                resultCheck =
+                    if List.IsEmpty(dpA) then
+                        1
+                    else if List.IsEmpty(dpB) then
+                        1
+                    else
+                        let
+                            codeChecks =
+                                List.Transform(
+                                    dpA,
+                                    (codeA) => List.Contains(dpB, codeA)
+                                ),
+                            anyMissing = List.Contains(codeChecks, false)
+                        in
+                            if anyMissing then 0 else 1
+            in
+                resultCheck
+in
+    finalResult),
+    #"DP Filter" = Table.SelectRows(#"DP Check", each ([DP Check] = 1)),
+    #"Removed Columns1" = Table.RemoveColumns(#"DP Filter",{"SWSH Check", "XY Check", "SM Check", "BW Check", "DP Check"}),
+    #"Remove Jumbo" = Table.SelectRows(#"Removed Columns1", each not Text.Contains([search_term], "Jumbo")),
+    #"Remove Jumbo Results" = Table.SelectRows(#"Remove Jumbo", each not Text.Contains([title], "Jumbo") and not Text.Contains([title], "jumbo") and not Text.Contains([title], "JUMBO") and not Text.Contains([title], "Oversized") and not Text.Contains([title], "OVERSIZED") and not Text.Contains([title], "oversized")),
+    #"Filtered Rows1" = Table.SelectRows(#"Remove Jumbo Results", each not Text.Contains([search_term], "DIY") and not Text.Contains([search_term], "diy") and not Text.Contains([search_term], "hand drawn") and not Text.Contains([search_term], "Hand Drawn") and not Text.Contains([search_term], "HAND DRAWN"))
+in
+    #"Filtered Rows1"
