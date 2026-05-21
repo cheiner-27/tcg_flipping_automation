@@ -4,6 +4,7 @@ from rapidfuzz import fuzz, process
 NAME_EXCLUDE = [
     'Booster', '3 Pack', 'Blister', 'Battle Box', 'Exclusive',
     'Elite Trainer', 'Mini Tin', 'Collection', 'Theme Deck',
+    'Set of',
 ]
 
 # Exact group names to exclude

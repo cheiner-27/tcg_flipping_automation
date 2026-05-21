@@ -2,9 +2,9 @@ name: TCG Arbitrage Search
 
 on:
   schedule:
-    # Every 2 days at 10:00 UTC. Note: cron "*/2" counts from the 1st of each
-    # month, so this is an approximation of "every 48 hours".
-    - cron: '0 10 */2 * *'
+    # Every 2 days at 23:00 UTC (6 PM EST / 7 PM EDT). Note: cron "*/2" counts
+    # from the 1st of each month, so this is an approximation of "every 48 hours".
+    - cron: '0 23 */2 * *'
   workflow_dispatch:  # also allows manual runs from the GitHub Actions UI
 
 jobs:

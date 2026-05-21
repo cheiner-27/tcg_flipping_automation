@@ -5,10 +5,11 @@ import config
 
 # Title exclusion lists — all matched case-insensitively against lowercased title
 GRADING_TERMS    = ['psa', 'cgc', 'bgs']
-CONDITION_TERMS  = [' mp', '/mp', ' hp', '/hp', 'moderate', 'heavily', 'heavy', '(hp)', 'lp-', ' lp', 'lightly']
+CONDITION_TERMS  = [' mp', '/mp', ' hp', '/hp', 'moderate', 'heavily', 'heavy', '(hp)', 'lp-', ' lp', 'lightly', '(lp)']
 DAMAGE_TERMS     = ['dmg', 'damage', 'see photo']
 LANGUAGE_TERMS   = ['japan', 'japanese', 'jpn', 'korean', 'chinese', 'spanish', 'italian', '(cn)', 'portuguese']
 JUMBO_TERMS      = ['jumbo', 'oversized']
+QUANTITY_TERMS   = ['set of', 'lot of']
 SEARCH_TERM_EXCL = ['diy', 'hand drawn']
 
 MAX_TIME_SECONDS = config.MAX_AUCTION_DAYS * 24 * 3600
@@ -144,6 +145,8 @@ def apply_filters(merged_results: list) -> list:
         if 'art case' in title_lower:
             continue
         if _title_has(title_lower, JUMBO_TERMS):
+            continue
+        if _title_has(title_lower, QUANTITY_TERMS):
             continue
         if _title_has(search_lower, SEARCH_TERM_EXCL):
             continue

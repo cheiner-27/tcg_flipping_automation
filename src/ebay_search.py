@@ -1,4 +1,5 @@
 import base64
+import time
 import requests
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -97,11 +98,26 @@ def _search_term_results(search_term: str, token: str) -> list:
         params['limit'] = str(limit)
         params['offset'] = str(offset)
 
-        r = requests.get(
-            'https://api.ebay.com/buy/browse/v1/item_summary/search',
-            headers=headers,
-            params=params,
-        )
+        for attempt in range(4):
+            try:
+                r = requests.get(
+                    'https://api.ebay.com/buy/browse/v1/item_summary/search',
+                    headers=headers,
+                    params=params,
+                    timeout=30,
+                )
+                break
+            except requests.exceptions.ConnectionError as e:
+                if attempt == 3:
+                    raise
+                wait = 2 ** attempt * 5
+                print(f"  Connection error for '{search_term}', retrying in {wait}s: {e}")
+                time.sleep(wait)
+        if r.status_code == 429:
+            retry_after = int(r.headers.get('Retry-After', 60))
+            print(f"  Rate limited; sleeping {retry_after}s")
+            time.sleep(retry_after)
+            continue
         if r.status_code != 200:
             print(f"  eBay error for '{search_term}': {r.status_code}")
             break
@@ -177,6 +193,7 @@ def search_all_terms(search_terms: list) -> list:
     for i, term in enumerate(search_terms, 1):
         print(f"  [{i}/{total}] {term}")
         all_results.extend(_search_term_results(term, token))
+        time.sleep(0.25)
 
     print(f"eBay search complete: {len(all_results)} raw results")
     return all_results
