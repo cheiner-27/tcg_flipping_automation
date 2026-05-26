@@ -3,6 +3,25 @@ from datetime import timedelta
 
 import config
 
+TCG_IMAGE_BASE = 'https://product-images.tcgplayer.com/fit-in/437x437'
+
+
+def _outbound_shipping(price: float) -> float:
+    """USPS shipping cost when reselling the card."""
+    if price < 25:
+        return 1.50
+    if price <= 200:
+        return 5.50
+    return 10.0 + int((price - 200) / 100)
+
+
+def _profit_roi(bin_total: float, mid_or_market: float) -> float:
+    """Buy-on-eBay / sell-on-TCG ROI after all fees and shipping."""
+    purchase_price = bin_total * 1.06          # eBay price + 6% tax/fees
+    tcg_revenue = mid_or_market * 0.8775       # TCG proceeds after 12.25% fees
+    profit = tcg_revenue - 0.30 - purchase_price - _outbound_shipping(bin_total)
+    return profit / purchase_price
+
 # Title exclusion lists — all matched case-insensitively against lowercased title
 GRADING_TERMS    = ['psa', 'cgc', 'bgs']
 CONDITION_TERMS  = [' mp', '/mp', ' hp', '/hp', 'moderate', 'heavily', 'heavy', '(hp)', 'lp-', ' lp', 'lightly', '(lp)']
@@ -87,9 +106,27 @@ def merge_with_tcg(ebay_results: list, tcg_data: list, category: str) -> list:
         except (TypeError, ValueError):
             low_price = None
 
+        try:
+            mid_price = float(tcg['midPrice']) if tcg.get('midPrice') is not None else None
+        except (TypeError, ValueError):
+            mid_price = None
+
+        try:
+            market_price = float(tcg['marketPrice']) if tcg.get('marketPrice') is not None else None
+        except (TypeError, ValueError):
+            market_price = None
+
+        mid_or_market = mid_price if mid_price is not None else market_price
+
         bin_total     = (bin_price + shipping) if bin_price is not None else None
         auction_total = (auction_price + shipping) if auction_price is not None else None
         roi = (bin_total / low_price) if (bin_total is not None and low_price and low_price > 0) else None
+
+        calc_profit_roi = None
+        if bin_total is not None and bin_total > 0 and mid_or_market and mid_or_market > 0:
+            ratio = bin_total / mid_or_market
+            if 0.5 <= ratio <= 2.0:
+                calc_profit_roi = _profit_roi(bin_total, mid_or_market)
 
         time_secs = item.get('time_remaining_seconds')
 
@@ -106,12 +143,15 @@ def merge_with_tcg(ebay_results: list, tcg_data: list, category: str) -> list:
             f'{prefix}.url':        tcg['url'],
             f'{prefix}.subTypeName': tcg['subTypeName'],
             f'{prefix}.lowPrice':   low_price,
-            f'{prefix}.midPrice':   tcg.get('midPrice'),
-            f'{prefix}.marketPrice': tcg.get('marketPrice'),
+            f'{prefix}.midPrice':   mid_price,
+            f'{prefix}.marketPrice': market_price,
             'Total Time':           _format_duration(time_secs),
             'buy_it_now_total':     bin_total,
             'auction_total':        auction_total,
             'ROI':                  roi,
+            'profit_roi':           calc_profit_roi,
+            'ebay_image_url':       item.get('image_url', ''),
+            'tcg_image_url':        f'{TCG_IMAGE_BASE}/{tcg["productId"]}.jpg',
             # Internal — excluded from CSV via extrasaction='ignore'
             '_time_remaining_seconds': time_secs,
         })
@@ -133,6 +173,13 @@ def apply_filters(merged_results: list) -> list:
         title_lower = title.lower()
         search_term = row['search_term']
         search_lower = search_term.lower()
+
+        # Only keep listings with a BIN price and sufficient profit ROI
+        if row.get('buy_it_now_total') is None:
+            continue
+        profit_roi = row.get('profit_roi')
+        if profit_roi is None or profit_roi < config.MIN_ROI:
+            continue
 
         if _title_has(title_lower, GRADING_TERMS):
             continue

@@ -15,3 +15,4 @@ BUYER_COUNTRY = os.environ.get('BUYER_COUNTRY', 'US')
 BUYER_ZIP = os.environ.get('BUYER_ZIP', '21015')
 
 MAX_AUCTION_DAYS = int(os.environ.get('MAX_AUCTION_DAYS', '2'))
+MIN_ROI = float(os.environ.get('MIN_ROI', '0.07'))

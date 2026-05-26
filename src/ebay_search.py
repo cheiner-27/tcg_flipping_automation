@@ -9,7 +9,7 @@ import config
 _OAUTH_TOKEN_CACHE = None
 
 
-def _get_oauth_token() -> str:
+def get_oauth_token() -> str:
     global _OAUTH_TOKEN_CACHE
     if _OAUTH_TOKEN_CACHE:
         return _OAUTH_TOKEN_CACHE
@@ -30,6 +30,42 @@ def _get_oauth_token() -> str:
 
     _OAUTH_TOKEN_CACHE = r.json()['access_token']
     return _OAUTH_TOKEN_CACHE
+
+
+def fetch_item_images(item_id: str, token: str) -> list[str]:
+    """
+    Fetch all image URLs for a single eBay item via the item detail endpoint.
+    Returns primary image first, then any additional images, deduplicated.
+    """
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+    }
+    url = f'https://api.ebay.com/buy/browse/v1/item/{quote(item_id, safe="")}'
+
+    for attempt in range(3):
+        try:
+            r = requests.get(url, headers=headers, timeout=30)
+            break
+        except requests.exceptions.ConnectionError:
+            if attempt == 2:
+                return []
+            time.sleep(5 * (attempt + 1))
+
+    if r.status_code != 200:
+        return []
+
+    data = r.json()
+    seen = set()
+    urls = []
+    for img_url in [
+        (data.get('image') or {}).get('imageUrl'),
+        *[(img.get('imageUrl')) for img in (data.get('additionalImages') or [])],
+    ]:
+        if img_url and img_url not in seen:
+            seen.add(img_url)
+            urls.append(img_url)
+    return urls
 
 
 def _enduserctx() -> str:
@@ -172,6 +208,7 @@ def _search_term_results(search_term: str, token: str) -> list:
                 'time_remaining_seconds': time_remaining_seconds,
                 'url': item.get('itemWebUrl', ''),
                 'card_condition': card_condition,
+                'image_url': (item.get('image') or {}).get('imageUrl', ''),
             })
 
         if 'next' not in data:
@@ -186,7 +223,7 @@ def _search_term_results(search_term: str, token: str) -> list:
 
 def search_all_terms(search_terms: list) -> list:
     print("Obtaining eBay OAuth token...")
-    token = _get_oauth_token()
+    token = get_oauth_token()
     total = len(search_terms)
     all_results = []
 
