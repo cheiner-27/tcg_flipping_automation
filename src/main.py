@@ -35,7 +35,7 @@ def _merged_fields(category: str) -> list:
         'Total Time', 'buy_it_now_total', 'auction_total', 'ROI',
         'profit_roi', 'ebay_image_url', 'tcg_image_url',
         'back_image_url', 'back_image_score',
-        'tcg_image_local', 'back_image_local',
+        'tcg_image_local', 'ebay_front_image_local', 'back_image_local',
     ]
 
 
@@ -118,21 +118,32 @@ def _download_images(results: list, images_dir: str, category: str) -> None:
         tcg_cache[product_id] = local
         row['tcg_image_local'] = local
 
-    # Back images — one per listing
-    back_count = 0
+    # eBay front + back images — one pair per listing
+    front_count = back_count = 0
     for row in results:
-        back_url = row.get('back_image_url', '')
-        if not back_url:
-            row['back_image_local'] = ''
-            continue
         safe_id = row.get('item_id', 'unknown').replace('|', '_')
-        filename = f'back_{safe_id}{_url_ext(back_url)}'
-        local = f'images/{filename}' if _download_file(session, back_url, os.path.join(images_dir, filename)) else ''
-        row['back_image_local'] = local
-        if local:
-            back_count += 1
 
-    print(f"  {len(tcg_cache)} TCG fronts, {back_count} backs downloaded → images/")
+        front_url = row.get('ebay_image_url', '')
+        if front_url:
+            filename = f'front_{safe_id}{_url_ext(front_url)}'
+            local = f'images/{filename}' if _download_file(session, front_url, os.path.join(images_dir, filename)) else ''
+            row['ebay_front_image_local'] = local
+            if local:
+                front_count += 1
+        else:
+            row['ebay_front_image_local'] = ''
+
+        back_url = row.get('back_image_url', '')
+        if back_url:
+            filename = f'back_{safe_id}{_url_ext(back_url)}'
+            local = f'images/{filename}' if _download_file(session, back_url, os.path.join(images_dir, filename)) else ''
+            row['back_image_local'] = local
+            if local:
+                back_count += 1
+        else:
+            row['back_image_local'] = ''
+
+    print(f"  {len(tcg_cache)} TCG fronts, {front_count} eBay fronts, {back_count} backs downloaded → images/")
 
 
 def main():
@@ -175,13 +186,11 @@ def main():
             row['back_image_score'] = -1
             continue
 
-        # Combine the primary search image with any additional listing images
-        primary = row.get('ebay_image_url') or ''
-        extra = fetch_item_images(item_id, token)
-        seen = {primary} if primary else set()
-        all_urls = ([primary] if primary else []) + [u for u in extra if u not in seen]
+        # Fetch all listing images; first one from item detail is the seller's primary (front)
+        detail_urls = fetch_item_images(item_id, token)
+        row['ebay_image_url'] = detail_urls[0] if detail_urls else ''
 
-        back_url, back_score = find_best_back(all_urls)
+        back_url, back_score = find_best_back(detail_urls)
         row['back_image_url']   = back_url or ''
         row['back_image_score'] = back_score
         if back_url:

@@ -70,7 +70,7 @@ def fetch_tcg_data(category_name, min_price=None, max_price=None):
                 if name.startswith(display_group):
                     name = name[len(display_group):].strip()
                 if ' tin' in name.lower() or ' box' in name.lower() or 'booster' in name.lower():
-                    name = 'unopened ' + name
+                    continue
             except Exception:
                 pass
 
