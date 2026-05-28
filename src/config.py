@@ -6,6 +6,7 @@ EBAY_CLIENT_SECRET = os.environ.get('EBAY_CLIENT_SECRET', '')
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 SUPABASE_DISMISSED_TABLE = os.environ.get('SUPABASE_DISMISSED_TABLE', 'dismissed_cards')
+SUPABASE_DISMISSED_LISTINGS_TABLE = os.environ.get('SUPABASE_DISMISSED_LISTINGS_TABLE', 'dismissed_listings')
 
 TCG_CATEGORY = os.environ.get('TCG_CATEGORY', 'pokemon')
 TCG_MIN_PRICE = float(os.environ.get('TCG_MIN_PRICE', '15'))

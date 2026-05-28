@@ -116,7 +116,7 @@ def merge_with_tcg(ebay_results: list, tcg_data: list, category: str) -> list:
         except (TypeError, ValueError):
             market_price = None
 
-        mid_or_market = mid_price if mid_price is not None else market_price
+        mid_or_market = market_price if market_price is not None else mid_price
 
         bin_total     = (bin_price + shipping) if bin_price is not None else None
         auction_total = (auction_price + shipping) if auction_price is not None else None

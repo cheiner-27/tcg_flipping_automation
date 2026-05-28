@@ -48,6 +48,15 @@ def _save_csv(data: list, filepath: str, fieldnames: list) -> None:
     print(f"  Saved {len(data)} rows → {os.path.basename(filepath)}")
 
 
+def _normalize_url(url: str) -> str:
+    """Strip query params/fragment for stable URL matching across runs."""
+    try:
+        p = urlparse(url.strip())
+        return f"{p.scheme}://{p.netloc}{p.path}"
+    except Exception:
+        return url.strip().split('?')[0].split('#')[0]
+
+
 def _fetch_dismissed_cards() -> list:
     if not config.SUPABASE_URL or not config.SUPABASE_KEY:
         print("  Supabase credentials not set — skipping dismissed cards.")
@@ -75,6 +84,77 @@ def _fetch_dismissed_cards() -> list:
     terms = [r['search_term'] for r in all_rows if r.get('search_term')]
     print(f"  Fetched {len(terms)} dismissed cards from Supabase")
     return terms
+
+
+def _fetch_dismissed_listings() -> list:
+    if not config.SUPABASE_URL or not config.SUPABASE_KEY:
+        print("  Supabase credentials not set — skipping dismissed listings.")
+        return []
+
+    from supabase import create_client
+    client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
+
+    all_rows = []
+    page_size = 1000
+    offset = 0
+    while True:
+        response = (
+            client.table(config.SUPABASE_DISMISSED_LISTINGS_TABLE)
+            .select('listing_url,dismissed_price,dismissal_reason')
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        rows = response.data or []
+        all_rows.extend(rows)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+
+    print(f"  Fetched {len(all_rows)} dismissed listings from Supabase")
+    return all_rows
+
+
+def _filter_dismissed_listings(results: list, dismissed: list) -> list:
+    """
+    Remove results that match a dismissed listing entry.
+
+    dismissal_reason='condition' → always excluded.
+    dismissal_reason='price'     → excluded only if current buy_it_now_total
+                                   is still >= the dismissed_price (i.e. not
+                                   dropped enough to be interesting again).
+    """
+    if not dismissed:
+        return results
+
+    url_map: dict[str, dict] = {}
+    for row in dismissed:
+        url_key = _normalize_url(row.get('listing_url') or '')
+        if url_key:
+            url_map[url_key] = {
+                'price': row.get('dismissed_price'),
+                'reason': row.get('dismissal_reason') or 'condition',
+            }
+
+    output = []
+    skipped = 0
+    for row in results:
+        url_key = _normalize_url(row.get('url', ''))
+        dismissal = url_map.get(url_key)
+        if dismissal:
+            reason = dismissal['reason']
+            if reason == 'condition':
+                skipped += 1
+                continue
+            if reason == 'price':
+                current = row.get('buy_it_now_total') or 0
+                threshold = dismissal['price']
+                if threshold is not None and current >= threshold:
+                    skipped += 1
+                    continue
+        output.append(row)
+
+    print(f"  Skipped {skipped} dismissed listings → {len(output)} remain")
+    return output
 
 
 def _url_ext(url: str) -> str:
@@ -157,8 +237,9 @@ def main():
     tcg_data = fetch_tcg_data(cat, min_price=config.TCG_MIN_PRICE, max_price=config.TCG_MAX_PRICE)
     _save_csv(tcg_data, os.path.join(OUTPUT_DIR, f'tcglist_{cat}.csv'), TCG_FIELDS)
 
-    print('\n=== Step 2: Fetch dismissed cards from Supabase ===')
+    print('\n=== Step 2: Fetch dismissed data from Supabase ===')
     dismissed = _fetch_dismissed_cards()
+    dismissed_listings = _fetch_dismissed_listings()
 
     print('\n=== Step 3: Filter TCG list ===')
     filtered = filter_tcg_data(tcg_data, dismissed)
@@ -175,6 +256,7 @@ def main():
 
     print('\n=== Step 6: Apply filters ===')
     final = apply_filters(merged)
+    final = _filter_dismissed_listings(final, dismissed_listings)
 
     print(f'\n=== Step 7: Fetch back images for {len(final)} profitable results ===')
     token = get_oauth_token()
