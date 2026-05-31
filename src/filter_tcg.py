@@ -22,6 +22,10 @@ GROUP_EXCLUDE_CONTAINS = ['Jumbo', 'Championship']
 DISMISSED_THRESHOLD = 89
 
 
+PRICE_RATIO_THRESHOLD = 10
+PRICE_RATIO_MARKET_FLOOR = 200
+
+
 def _passes_name_filter(name: str) -> bool:
     lower = name.lower()
     return not any(term.lower() in lower for term in NAME_EXCLUDE)
@@ -34,16 +38,35 @@ def _passes_group_filter(group: str) -> bool:
     return not any(term.lower() in lower for term in GROUP_EXCLUDE_CONTAINS)
 
 
+def _passes_price_ratio_filter(row: dict) -> bool:
+    """Exclude cards where marketPrice/lowPrice > 10, unless marketPrice > $200."""
+    market = row.get('marketPrice')
+    low = row.get('lowPrice')
+    try:
+        market_f = float(market)
+        low_f = float(low)
+    except (TypeError, ValueError):
+        return True  # missing price data — don't exclude
+    if low_f <= 0:
+        return True
+    if market_f / low_f > PRICE_RATIO_THRESHOLD and market_f <= PRICE_RATIO_MARKET_FLOOR:
+        return False
+    return True
+
+
 def filter_tcg_data(tcg_data: list, dismissed_terms: list) -> list:
     """
-    Apply product/group exclusions and remove dismissed cards via fuzzy match.
+    Apply product/group exclusions, price-ratio filter, and remove dismissed
+    cards via fuzzy match.
 
     tcg_data:        list of dicts from tcgcsv_scraper.fetch_tcg_data
     dismissed_terms: list of search_term strings pulled from Supabase
     """
     candidates = [
         row for row in tcg_data
-        if _passes_name_filter(row['name']) and _passes_group_filter(row['group'])
+        if _passes_name_filter(row['name'])
+        and _passes_group_filter(row['group'])
+        and _passes_price_ratio_filter(row)
     ]
 
     if not dismissed_terms:
