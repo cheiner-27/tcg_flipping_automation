@@ -1,12 +1,18 @@
 """
 Identifies and ranks Pokémon card back images from a list of eBay listing URLs.
 
-Detection:  image must have enough card-back blue AND Pokémon-logo yellow.
+Detection:  image must pass ALL of:
+              - blue ratio >= _BLUE_RATIO_MIN   (card-back blue dominant)
+              - yellow ratio >= _YELLOW_RATIO_MIN (Pokémon logo yellow present)
+              - yellow ratio <= _YELLOW_RATIO_MAX (card fronts with lots of yellow art rejected)
 Ranking:    score 0–3 based on how much of the card is visible.
               3 = full card + Pokéball red confirmed
               2 = full card (yellow text in both top and bottom thirds)
               1 = partial card (yellow text in one third only)
               0 = very partial (back detected but text barely visible)
+Tiebreaker: within the same score, highest blue:yellow ratio wins — card backs are
+            blue-dominant relative to their yellow; fronts that slip through tend to
+            have more yellow relative to blue.
 """
 
 import io
@@ -28,8 +34,9 @@ _YELLOW_H_LO,  _YELLOW_H_HI  = 15, 55
 _YELLOW_S_MIN, _YELLOW_V_MIN  = 65, 80   # relaxed from (80,100) for dim/dark photos
 
 # Detection thresholds (fraction of total pixels)
-_BLUE_RATIO_MIN   = 0.05   # relaxed from 0.08 — catches small-card-in-frame and dark-surround shots
+_BLUE_RATIO_MIN   = 0.04   # relaxed from 0.05 — catches cards with large non-blue backgrounds
 _YELLOW_RATIO_MIN = 0.005  # ≥0.5 % must be Pokémon yellow
+_YELLOW_RATIO_MAX = 0.20   # >20 % yellow means card-front artwork, not a back
 
 # Ranking threshold: yellow pixels needed per zone to count as "text present"
 _YELLOW_ZONE_RATIO = 0.022  # 2.2 % of the zone
@@ -64,14 +71,15 @@ def _mask(arr: np.ndarray, h_lo: int, h_hi: int, s_min: int, v_min: int) -> np.n
 
 def _score(img: Image.Image) -> tuple[bool, int, float]:
     """
-    Return (is_back, rank_score, yellow_ratio) for a single already-resized HSV image.
+    Return (is_back, rank_score, tiebreak) for a single already-resized HSV image.
 
     Score:
         3  full card + Pokéball red confirmed
         2  full card (both yellow text blocks present)
         1  partial (one text block)
         0  very partial (back detected, text barely visible)
-    yellow_ratio is used as a tiebreaker within the same score bucket.
+    tiebreak = blue_ratio / yellow_ratio — higher means more blue-dominant relative to yellow,
+    which is characteristic of card backs vs card fronts.
     """
     arr = np.array(img)
     total = arr.shape[0] * arr.shape[1]
@@ -81,11 +89,14 @@ def _score(img: Image.Image) -> tuple[bool, int, float]:
     blue_mask   = _mask(arr, _BLUE_H_LO,   _BLUE_H_HI,   _BLUE_S_MIN,   _BLUE_V_MIN)
     yellow_mask = _mask(arr, _YELLOW_H_LO, _YELLOW_H_HI, _YELLOW_S_MIN, _YELLOW_V_MIN)
 
+    blue_ratio   = blue_mask.sum() / total
     yellow_ratio = yellow_mask.sum() / total
 
-    if blue_mask.sum() / total < _BLUE_RATIO_MIN:
+    if blue_ratio < _BLUE_RATIO_MIN:
         return False, 0, 0.0
     if yellow_ratio < _YELLOW_RATIO_MIN:
+        return False, 0, 0.0
+    if yellow_ratio > _YELLOW_RATIO_MAX:
         return False, 0, 0.0
 
     # Check whether the Pokémon text appears in the top and/or bottom thirds.
@@ -105,15 +116,13 @@ def _score(img: Image.Image) -> tuple[bool, int, float]:
     red_mask = ((h_arr <= _RED_H_MAX) | (h_arr >= _RED_H_MIN)) & (s_arr >= _RED_S_MIN) & (v_arr >= _RED_V_MIN)
     has_red = red_mask.sum() / total >= _RED_RATIO_MIN
 
-    return True, zone_score + int(has_red), yellow_ratio
+    tiebreak = blue_ratio / max(yellow_ratio, 1e-4)
+    return True, zone_score + int(has_red), tiebreak
 
 
 def find_best_back(image_urls: list[str]) -> tuple[str | None, int]:
     """
     Scan a list of eBay image URLs and return the best card back.
-    The first URL is assumed to be the primary (front-facing) listing image and is
-    excluded from being returned as the back — if it scores highest, the result is
-    treated as no-back-found to avoid using the card face as its own back image.
 
     Returns:
         (url, score)  — url of the best back found and its completeness score.
@@ -128,23 +137,16 @@ def find_best_back(image_urls: list[str]) -> tuple[str | None, int]:
     """
     best_url      = None
     best_score    = -1
-    best_yellow   = 0.0
-
-    primary_url = image_urls[0] if image_urls else None
+    best_tiebreak = 0.0
 
     for url in image_urls:
         img = _fetch(url)
         if img is None:
             continue
-        is_back, score, yellow_ratio = _score(img)
-        if is_back and (score > best_score or (score == best_score and yellow_ratio > best_yellow)):
-            best_score  = score
-            best_yellow = yellow_ratio
-            best_url    = url
-
-    # If the only "back" found is the primary listing image, reject it — it's almost
-    # certainly the card face being mistaken for the back.
-    if best_url is not None and best_url == primary_url:
-        return None, -1
+        is_back, score, tiebreak = _score(img)
+        if is_back and (score > best_score or (score == best_score and tiebreak > best_tiebreak)):
+            best_score    = score
+            best_tiebreak = tiebreak
+            best_url      = url
 
     return best_url, best_score
