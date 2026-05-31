@@ -3,8 +3,10 @@ from rapidfuzz import fuzz, process
 # Product name substrings that indicate non-single-card products
 NAME_EXCLUDE = [
     'Booster', '3 Pack', 'Blister', 'Battle Box', 'Exclusive',
-    'Elite Trainer', 'Mini Tin', 'Collection', 'Theme Deck',
-    'Set of',
+    'Elite Trainer', ' Tin', 'Collection', 'Theme Deck',
+    'Set of', 'Battle Deck', 'V Battle', 'League Battle',
+    'Starter Set', 'Starter Deck', 'Collector Chest', 'Case File',
+    'Gift Box', 'Figure', 'Playmat', 'Binder',
 ]
 
 # Exact group names to exclude

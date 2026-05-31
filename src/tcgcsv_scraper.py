@@ -1,3 +1,4 @@
+import re
 import time
 import requests
 
@@ -10,6 +11,13 @@ CATEGORIES = {
 
 HEADERS = {"User-Agent": "TCGFlippingAutomation/1.0.0"}
 REQUEST_DELAY = 0.1  # seconds between requests, per tcgcsv.com usage guidelines
+
+_QUOTE_PATTERN = re.compile(r'\b(prerelease|staff|promo)\b', re.IGNORECASE)
+
+
+def _quote_special_terms(search_term: str) -> str:
+    """Wrap prerelease/staff/promo in quotes so eBay treats them as required."""
+    return _QUOTE_PATTERN.sub(lambda m: f'"{m.group(0)}"', search_term)
 
 
 def _get(url):
@@ -107,6 +115,8 @@ def fetch_tcg_data(category_name, min_price=None, max_price=None):
                     search_term = f'{name} "{ext_num}" {display_group}'
             except Exception:
                 search_term = f'{product_name} {display_group}'
+
+            search_term = _quote_special_terms(search_term)
 
             low_price = price_info.get('lowPrice')
             mid_price = price_info.get('midPrice')
