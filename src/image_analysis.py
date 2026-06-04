@@ -36,7 +36,7 @@ _YELLOW_S_MIN, _YELLOW_V_MIN  = 65, 80   # relaxed from (80,100) for dim/dark ph
 # Detection thresholds (fraction of total pixels)
 _BLUE_RATIO_MIN   = 0.04   # relaxed from 0.05 — catches cards with large non-blue backgrounds
 _YELLOW_RATIO_MIN = 0.005  # ≥0.5 % must be Pokémon yellow
-_YELLOW_RATIO_MAX = 0.20   # >20 % yellow means card-front artwork, not a back
+_YELLOW_RATIO_MAX = 0.70   # card backs with zoomed-in logo can reach ~60 % yellow
 
 # Ranking threshold: yellow pixels needed per zone to count as "text present"
 _YELLOW_ZONE_RATIO = 0.022  # 2.2 % of the zone

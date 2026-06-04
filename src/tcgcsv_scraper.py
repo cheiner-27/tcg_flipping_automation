@@ -123,12 +123,12 @@ def fetch_tcg_data(category_name, min_price=None, max_price=None):
             market_price = price_info.get('marketPrice')
 
             try:
-                low_price_value = float(low_price) if low_price is not None else None
+                market_price_value = float(market_price) if market_price is not None else None
             except (ValueError, TypeError):
-                low_price_value = None
+                market_price_value = None
 
             if min_price is not None and max_price is not None:
-                if low_price_value is None or not (min_price <= low_price_value <= max_price):
+                if market_price_value is None or not (min_price <= market_price_value <= max_price):
                     continue
 
             all_data.append({
