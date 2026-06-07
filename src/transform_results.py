@@ -19,7 +19,7 @@ def _profit_roi(bin_total: float, mid_or_market: float) -> float:
     """Buy-on-eBay / sell-on-TCG ROI after all fees and shipping."""
     purchase_price = bin_total * 1.06          # eBay price + 6% tax/fees
     tcg_revenue = mid_or_market * 0.8775       # TCG proceeds after 12.25% fees
-    profit = tcg_revenue - 0.30 - purchase_price - _outbound_shipping(bin_total)
+    profit = tcg_revenue - 0.30 - purchase_price - _outbound_shipping(mid_or_market)
     return profit / purchase_price
 
 # Title exclusion lists — all matched case-insensitively against lowercased title

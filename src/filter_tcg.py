@@ -1,5 +1,3 @@
-from rapidfuzz import fuzz, process
-
 # Product name substrings that indicate non-single-card products
 NAME_EXCLUDE = [
     'Booster', '3 Pack', 'Blister', 'Battle Box', 'Exclusive',
@@ -19,10 +17,6 @@ GROUP_EXCLUDE_EXACT = {
 
 # Substrings in group name that trigger exclusion
 GROUP_EXCLUDE_CONTAINS = ['Jumbo', 'Championship']
-
-# Fuzzy match threshold (mirrors PowerQuery's Threshold=0.89, scaled to 0–100)
-DISMISSED_THRESHOLD = 89
-
 
 PRICE_RATIO_THRESHOLD = 10
 PRICE_RATIO_MARKET_FLOOR = 200
@@ -56,10 +50,14 @@ def _passes_price_ratio_filter(row: dict) -> bool:
     return True
 
 
+def _normalize(term: str) -> str:
+    """Strip quotes and collapse whitespace for exact dismissed-card matching."""
+    return ' '.join(term.replace('"', '').split()).lower()
+
+
 def filter_tcg_data(tcg_data: list, dismissed_terms: list) -> list:
     """
-    Apply product/group exclusions, price-ratio filter, and remove dismissed
-    cards via fuzzy match.
+    Apply product/group exclusions, price-ratio filter, and remove dismissed cards.
 
     tcg_data:        list of dicts from tcgcsv_scraper.fetch_tcg_data
     dismissed_terms: list of search_term strings pulled from Supabase
@@ -75,17 +73,12 @@ def filter_tcg_data(tcg_data: list, dismissed_terms: list) -> list:
         print(f"Filtered to {len(candidates)} products (no dismissed cards to check)")
         return candidates
 
-    # rapidfuzz.process.extractOne is vectorised in C — much faster than a Python loop
-    results = []
-    for row in candidates:
-        match = process.extractOne(
-            row['searchTerm'],
-            dismissed_terms,
-            scorer=fuzz.ratio,
-            score_cutoff=DISMISSED_THRESHOLD,
-        )
-        if match is None:
-            results.append(row)
+    # Normalize dismissed terms once into a set for O(1) exact lookup.
+    # Stripping quotes handles the old format (no quotes around card numbers)
+    # and new format ("NN/NN" quoted) transparently.
+    dismissed_set = {_normalize(t) for t in dismissed_terms}
+
+    results = [row for row in candidates if _normalize(row['searchTerm']) not in dismissed_set]
 
     print(f"Filtered to {len(results)} products "
           f"({len(tcg_data) - len(results)} removed, {len(tcg_data)} total)")
