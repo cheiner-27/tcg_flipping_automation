@@ -5,14 +5,17 @@ Detection:  image must pass ALL of:
               - blue ratio >= _BLUE_RATIO_MIN   (card-back blue dominant)
               - yellow ratio >= _YELLOW_RATIO_MIN (Pokémon logo yellow present)
               - yellow ratio <= _YELLOW_RATIO_MAX (card fronts with lots of yellow art rejected)
+              - red ratio <= _RED_RATIO_MAX       (rejects fire/fighting card fronts)
 Ranking:    score 0–3 based on how much of the card is visible.
               3 = full card + Pokéball red confirmed
-              2 = full card (yellow text in both top and bottom thirds)
+              2 = full card (yellow text in both top and bottom thirds), or partial + Pokéball
               1 = partial card (yellow text in one third only)
               0 = very partial (back detected but text barely visible)
-Tiebreaker: within the same score, highest blue:yellow ratio wins — card backs are
-            blue-dominant relative to their yellow; fronts that slip through tend to
-            have more yellow relative to blue.
+Tiebreaker: within the same score, composite score wins:
+              zone_coverage + red_ratio*10 + blue_ratio*0.5
+            (weights derived empirically; zone coverage is the strongest signal of
+            card completeness, red presence confirms the Pokéball, blue coverage
+            confirms the background)
 """
 
 import io
@@ -34,9 +37,9 @@ _YELLOW_H_LO,  _YELLOW_H_HI  = 15, 55
 _YELLOW_S_MIN, _YELLOW_V_MIN  = 65, 80   # relaxed from (80,100) for dim/dark photos
 
 # Detection thresholds (fraction of total pixels)
-_BLUE_RATIO_MIN   = 0.04   # relaxed from 0.05 — catches cards with large non-blue backgrounds
+_BLUE_RATIO_MIN   = 0.03   # relaxed from 0.04 — catches dim/zoomed-in backs with washed-out blue
 _YELLOW_RATIO_MIN = 0.005  # ≥0.5 % must be Pokémon yellow
-_YELLOW_RATIO_MAX = 0.70   # card backs with zoomed-in logo can reach ~60 % yellow
+_YELLOW_RATIO_MAX = 0.80   # relaxed from 0.70 — zoomed-in logo shots can reach ~72 % yellow
 
 # Ranking threshold: yellow pixels needed per zone to count as "text present"
 _YELLOW_ZONE_RATIO = 0.022  # 2.2 % of the zone
@@ -46,7 +49,8 @@ _RED_H_MAX = 12
 _RED_H_MIN = 243
 _RED_S_MIN = 70
 _RED_V_MIN = 70
-_RED_RATIO_MIN = 0.0003   # very low — just needs any Pokéball presence; used for +1 score boost
+_RED_RATIO_MIN = 0.003   # tightened from 0.0003 — requires a visible Pokéball, not just noise
+_RED_RATIO_MAX = 0.07    # rejects fire/fighting-type card fronts with excessive red art
 
 _THUMB = (150, 200)   # resize target keeps memory/CPU low; preserves portrait AR
 
@@ -99,6 +103,15 @@ def _score(img: Image.Image) -> tuple[bool, int, float]:
     if yellow_ratio > _YELLOW_RATIO_MAX:
         return False, 0, 0.0
 
+    # Pokéball red: compute early so we can gate on max red before zone scoring
+    h_arr, s_arr, v_arr = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+    red_mask  = ((h_arr <= _RED_H_MAX) | (h_arr >= _RED_H_MIN)) & (s_arr >= _RED_S_MIN) & (v_arr >= _RED_V_MIN)
+    red_ratio = red_mask.sum() / total
+
+    # Reject fire/fighting-type card fronts: too much red art for a card back
+    if red_ratio > _RED_RATIO_MAX:
+        return False, 0, 0.0
+
     # Check whether the Pokémon text appears in the top and/or bottom thirds.
     h = arr.shape[0]
     third = max(h // 3, 1)
@@ -106,17 +119,17 @@ def _score(img: Image.Image) -> tuple[bool, int, float]:
     top_zone    = yellow_mask[:third, :]
     bottom_zone = yellow_mask[h - third:, :]
 
-    has_top    = top_zone.sum()    / top_zone.size    >= _YELLOW_ZONE_RATIO
-    has_bottom = bottom_zone.sum() / bottom_zone.size >= _YELLOW_ZONE_RATIO
+    top_ratio    = top_zone.sum()    / top_zone.size
+    bottom_ratio = bottom_zone.sum() / bottom_zone.size
 
+    has_top    = top_ratio    >= _YELLOW_ZONE_RATIO
+    has_bottom = bottom_ratio >= _YELLOW_ZONE_RATIO
     zone_score = int(has_top) + int(has_bottom)
+    has_red    = red_ratio >= _RED_RATIO_MIN
 
-    # Pokéball red bonus: gives backs a score edge over fronts with incidental blue+yellow
-    h_arr, s_arr, v_arr = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
-    red_mask = ((h_arr <= _RED_H_MAX) | (h_arr >= _RED_H_MIN)) & (s_arr >= _RED_S_MIN) & (v_arr >= _RED_V_MIN)
-    has_red = red_mask.sum() / total >= _RED_RATIO_MIN
-
-    tiebreak = blue_ratio / max(yellow_ratio, 1e-4)
+    # Composite tiebreak: zone coverage is the strongest back-completeness signal;
+    # red (Pokéball) and blue (background) reinforce it.
+    tiebreak = (top_ratio + bottom_ratio) + red_ratio * 10.0 + blue_ratio * 0.5
     return True, zone_score + int(has_red), tiebreak
 
 
