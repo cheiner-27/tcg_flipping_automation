@@ -1,5 +1,6 @@
-# Product name substrings that indicate non-single-card products
-NAME_EXCLUDE = [
+# ── Pokemon exclusions ────────────────────────────────────────────────────────
+
+_POKEMON_NAME_EXCLUDE = [
     'Booster', '3 Pack', 'Blister', 'Battle Box', 'Exclusive',
     'Elite Trainer', ' Tin', 'Collection', 'Theme Deck',
     'Set of', 'Battle Deck', 'V Battle', 'League Battle',
@@ -7,31 +8,65 @@ NAME_EXCLUDE = [
     'Gift Box', 'Figure', 'Playmat', 'Binder',
 ]
 
-# Exact group names to exclude
-GROUP_EXCLUDE_EXACT = {
+_POKEMON_GROUP_EXCLUDE_EXACT = {
     'POP Series 1', 'POP Series 2', 'POP Series 3', 'POP Series 4',
     'POP Series 5', 'POP Series 6', 'POP Series 7', 'POP Series 8',
     'POP Series 9', 'Prize Pack Series Cards',
     'Trick or Trade BOOster Bundle 2023', 'Trick or Trade BOOster Bundle 2024',
 }
 
-# Substrings in group name that trigger exclusion
-GROUP_EXCLUDE_CONTAINS = ['Jumbo', 'Championship']
+_POKEMON_GROUP_EXCLUDE_CONTAINS = ['Jumbo', 'Championship']
 
-PRICE_RATIO_THRESHOLD = 10
+# ── Magic: The Gathering exclusions ──────────────────────────────────────────
+
+_MAGIC_NAME_EXCLUDE = [
+    # Sealed products
+    'Booster', 'Bundle', 'Commander Deck', 'Starter Kit', 'Starter Deck',
+    'Starter Set', 'Theme Deck', 'Fat Pack', 'Gift Pack', 'Gift Set',
+    'Prerelease Pack', 'Promo Pack', 'Tournament Pack', 'Intro Pack',
+    'Event Deck', 'Deck Box', 'Deckbox', 'Playmat', 'Sleeves', 'Binder',
+    'Dice', 'Display', 'Case', 'Sealed', 'Box Set', 'Box Topper',
+    'Oversized', 'Life Counter', 'Spindown', ' Deck',
+    # Non-singles
+    ' Token', 'Emblem', 'Checklist', 'Art Card', 'Punch Card',
+]
+
+_MAGIC_GROUP_EXCLUDE_EXACT: set = set()
+
+_MAGIC_GROUP_EXCLUDE_CONTAINS = ['Jumbo', 'Oversize', 'Championship']
+
+# ── Per-game lookup tables ────────────────────────────────────────────────────
+
+_NAME_EXCLUDE = {
+    'pokemon': _POKEMON_NAME_EXCLUDE,
+    'magic':   _MAGIC_NAME_EXCLUDE,
+}
+
+_GROUP_EXCLUDE_EXACT = {
+    'pokemon': _POKEMON_GROUP_EXCLUDE_EXACT,
+    'magic':   _MAGIC_GROUP_EXCLUDE_EXACT,
+}
+
+_GROUP_EXCLUDE_CONTAINS = {
+    'pokemon': _POKEMON_GROUP_EXCLUDE_CONTAINS,
+    'magic':   _MAGIC_GROUP_EXCLUDE_CONTAINS,
+}
+
+PRICE_RATIO_THRESHOLD    = 10
 PRICE_RATIO_MARKET_FLOOR = 200
 
 
-def _passes_name_filter(name: str) -> bool:
+def _passes_name_filter(name: str, category: str) -> bool:
+    terms = _NAME_EXCLUDE.get(category, _POKEMON_NAME_EXCLUDE)
     lower = name.lower()
-    return not any(term.lower() in lower for term in NAME_EXCLUDE)
+    return not any(term.lower() in lower for term in terms)
 
 
-def _passes_group_filter(group: str) -> bool:
-    if group in GROUP_EXCLUDE_EXACT:
+def _passes_group_filter(group: str, category: str) -> bool:
+    if group in _GROUP_EXCLUDE_EXACT.get(category, set()):
         return False
     lower = group.lower()
-    return not any(term.lower() in lower for term in GROUP_EXCLUDE_CONTAINS)
+    return not any(term.lower() in lower for term in _GROUP_EXCLUDE_CONTAINS.get(category, []))
 
 
 def _passes_price_ratio_filter(row: dict) -> bool:
@@ -42,7 +77,7 @@ def _passes_price_ratio_filter(row: dict) -> bool:
         market_f = float(market)
         low_f = float(low)
     except (TypeError, ValueError):
-        return True  # missing price data — don't exclude
+        return True
     if low_f <= 0:
         return True
     if market_f / low_f > PRICE_RATIO_THRESHOLD and market_f <= PRICE_RATIO_MARKET_FLOOR:
@@ -55,17 +90,18 @@ def _normalize(term: str) -> str:
     return ' '.join(term.replace('"', '').split()).lower()
 
 
-def filter_tcg_data(tcg_data: list, dismissed_terms: list) -> list:
+def filter_tcg_data(tcg_data: list, dismissed_terms: list, category: str = 'pokemon') -> list:
     """
     Apply product/group exclusions, price-ratio filter, and remove dismissed cards.
 
     tcg_data:        list of dicts from tcgcsv_scraper.fetch_tcg_data
     dismissed_terms: list of search_term strings pulled from Supabase
+    category:        game name ('pokemon' or 'magic')
     """
     candidates = [
         row for row in tcg_data
-        if _passes_name_filter(row['name'])
-        and _passes_group_filter(row['group'])
+        if _passes_name_filter(row['name'], category)
+        and _passes_group_filter(row['group'], category)
         and _passes_price_ratio_filter(row)
     ]
 
@@ -73,11 +109,7 @@ def filter_tcg_data(tcg_data: list, dismissed_terms: list) -> list:
         print(f"Filtered to {len(candidates)} products (no dismissed cards to check)")
         return candidates
 
-    # Normalize dismissed terms once into a set for O(1) exact lookup.
-    # Stripping quotes handles the old format (no quotes around card numbers)
-    # and new format ("NN/NN" quoted) transparently.
     dismissed_set = {_normalize(t) for t in dismissed_terms}
-
     results = [row for row in candidates if _normalize(row['searchTerm']) not in dismissed_set]
 
     print(f"Filtered to {len(results)} products "

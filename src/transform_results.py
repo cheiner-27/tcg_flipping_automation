@@ -24,7 +24,7 @@ def _profit_roi(bin_total: float, mid_or_market: float) -> float:
 
 # Title exclusion lists — all matched case-insensitively against lowercased title
 GRADING_TERMS    = ['psa', 'cgc', 'bgs']
-CONDITION_TERMS  = [' mp', '/mp', ' hp', '/hp', 'moderate', 'heavily', 'heavy', '(hp)', 'lp-', ' lp', 'lightly', '(lp)']
+CONDITION_TERMS  = [' mp', '/mp', '-mp', ' hp', '/hp', '-hp', 'moderate', 'heavily', 'heavy', '(hp)', 'lp-', ' lp', '-lp', 'lightly', '(lp)']
 DAMAGE_TERMS     = ['dmg', 'damage', 'see photo']
 LANGUAGE_TERMS   = ['japan', 'japanese', 'jpn', 'korean', 'chinese', 'spanish', 'italian', '(cn)', 'portuguese']
 JUMBO_TERMS      = ['jumbo', 'oversized']
@@ -160,13 +160,14 @@ def merge_with_tcg(ebay_results: list, tcg_data: list, category: str) -> list:
     return output
 
 
-def apply_filters(merged_results: list) -> list:
+def apply_filters(merged_results: list, category: str = 'pokemon') -> list:
     """
     Apply all content and time filters to already-merged results.
     Items without a known end date (pure BIN listings) are kept — only
     items with a confirmed end date beyond MAX_AUCTION_DAYS are dropped.
     """
     output = []
+    is_pokemon = category == 'pokemon'
 
     for row in merged_results:
         title = row['title']
@@ -200,14 +201,15 @@ def apply_filters(merged_results: list) -> list:
         if 'jumbo' in search_lower:
             continue
 
-        if 'shadowless' in search_lower:
-            if 'shadowless' not in title_lower and 'bss' not in title_lower:
+        # Pokemon-specific title/term checks
+        if is_pokemon:
+            if 'shadowless' in search_lower:
+                if 'shadowless' not in title_lower and 'bss' not in title_lower:
+                    continue
+            if not _swsh_check(search_term, title):
                 continue
-
-        if not _swsh_check(search_term, title):
-            continue
-        if not all(_prefix_num_check(search_term, title, p) for p in ('XY', 'SM', 'BW', 'DP')):
-            continue
+            if not all(_prefix_num_check(search_term, title, p) for p in ('XY', 'SM', 'BW', 'DP')):
+                continue
 
         # Only drop items whose known end date is beyond the cutoff.
         # Items with no end date (BIN listings) pass through.

@@ -9,8 +9,11 @@ SUPABASE_DISMISSED_TABLE = os.environ.get('SUPABASE_DISMISSED_TABLE', 'dismissed
 SUPABASE_DISMISSED_LISTINGS_TABLE = os.environ.get('SUPABASE_DISMISSED_LISTINGS_TABLE', 'dismissed_listings')
 
 TCG_CATEGORY = os.environ.get('TCG_CATEGORY', 'pokemon')
-TCG_MIN_PRICE = float(os.environ.get('TCG_MIN_PRICE', '15'))
-TCG_MAX_PRICE = float(os.environ.get('TCG_MAX_PRICE', '2000'))
+
+POKEMON_MIN_PRICE = float(os.environ.get('POKEMON_MIN_PRICE', '15'))
+POKEMON_MAX_PRICE = float(os.environ.get('POKEMON_MAX_PRICE', '2000'))
+MAGIC_MIN_PRICE   = float(os.environ.get('MAGIC_MIN_PRICE', '35'))
+MAGIC_MAX_PRICE   = float(os.environ.get('MAGIC_MAX_PRICE', '1000'))
 
 BUYER_COUNTRY = os.environ.get('BUYER_COUNTRY', 'US')
 BUYER_ZIP = os.environ.get('BUYER_ZIP', '21015')

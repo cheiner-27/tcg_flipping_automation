@@ -233,8 +233,15 @@ def main():
     date_str = datetime.now().strftime('%Y%m%d')
     merged_fields = _merged_fields(cat)
 
+    if cat == 'magic':
+        min_price = config.MAGIC_MIN_PRICE
+        max_price = config.MAGIC_MAX_PRICE
+    else:
+        min_price = config.POKEMON_MIN_PRICE
+        max_price = config.POKEMON_MAX_PRICE
+
     print('=== Step 1: Fetch TCG data ===')
-    tcg_data = fetch_tcg_data(cat, min_price=config.TCG_MIN_PRICE, max_price=config.TCG_MAX_PRICE)
+    tcg_data = fetch_tcg_data(cat, min_price=min_price, max_price=max_price)
     _save_csv(tcg_data, os.path.join(OUTPUT_DIR, f'tcglist_{cat}.csv'), TCG_FIELDS)
 
     print('\n=== Step 2: Fetch dismissed data from Supabase ===')
@@ -242,7 +249,7 @@ def main():
     dismissed_listings = _fetch_dismissed_listings()
 
     print('\n=== Step 3: Filter TCG list ===')
-    filtered = filter_tcg_data(tcg_data, dismissed)
+    filtered = filter_tcg_data(tcg_data, dismissed, category=cat)
     _save_csv(filtered, os.path.join(OUTPUT_DIR, f'tcglist_{cat}_filtered.csv'), TCG_FIELDS)
 
     print('\n=== Step 4: Search eBay ===')
@@ -255,7 +262,7 @@ def main():
     _save_csv(merged, os.path.join(OUTPUT_DIR, f'{cat}_results_raw.csv'), merged_fields)
 
     print('\n=== Step 6: Apply filters ===')
-    final = apply_filters(merged)
+    final = apply_filters(merged, category=cat)
     final = _filter_dismissed_listings(final, dismissed_listings)
 
     print(f'\n=== Step 7: Fetch back images for {len(final)} profitable results ===')
@@ -272,7 +279,13 @@ def main():
         detail_urls = fetch_item_images(item_id, token)
         row['ebay_image_url'] = detail_urls[0] if detail_urls else ''
 
-        back_url, back_score = find_best_back(detail_urls)
+        non_primary = detail_urls[1:]
+        if len(non_primary) == 1:
+            back_url, back_score = non_primary[0], 0
+        elif non_primary:
+            back_url, back_score = find_best_back(non_primary, category=cat)
+        else:
+            back_url, back_score = None, -1
         row['back_image_url']   = back_url or ''
         row['back_image_score'] = back_score
         if back_url:
