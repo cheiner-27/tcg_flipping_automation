@@ -48,6 +48,25 @@ def _swsh_check(search_term: str, title: str) -> bool:
     return search_term[after:after + 3] in title
 
 
+def _title_has_number(ext_num: str, title_lower: str) -> bool:
+    """
+    True if the card's collector number appears in the title as a standalone
+    number (tolerating leading zeros and '#'), e.g. '78' matches '78', '#78',
+    '078', '78/264' — but not '780' or '1782'. Cards with no numeric ext_num
+    always pass.
+    """
+    m = re.search(r'\d+', ext_num or '')
+    if not m:
+        return True
+    num = str(int(m.group()))
+    return bool(re.search(r'(?<!\d)0*' + num + r'(?!\d)', title_lower))
+
+
+def _title_is_foil(title_lower: str) -> bool:
+    """True if the title says 'foil' but not 'non-foil'/'nonfoil'/'non foil'."""
+    return 'foil' in re.sub(r'non[\s-]*foil', '', title_lower)
+
+
 def _prefix_num_check(search_term: str, title: str, prefix: str) -> bool:
     pattern = re.compile(re.escape(prefix) + r'(\d+)', re.IGNORECASE)
     codes_search = {m.group(1) for m in pattern.finditer(search_term)}
@@ -154,6 +173,7 @@ def merge_with_tcg(ebay_results: list, tcg_data: list, category: str) -> list:
             'tcg_image_url':        f'{TCG_IMAGE_BASE}/{tcg["productId"]}.jpg',
             # Internal — excluded from CSV via extrasaction='ignore'
             '_time_remaining_seconds': time_secs,
+            '_ext_num':             tcg.get('ext_num', ''),
         })
 
     print(f"Merged {len(output)} eBay results with TCG data")
@@ -168,6 +188,8 @@ def apply_filters(merged_results: list, category: str = 'pokemon') -> list:
     """
     output = []
     is_pokemon = category == 'pokemon'
+    is_magic = category == 'magic'
+    prefix = f'tcglist_{category}'
 
     for row in merged_results:
         title = row['title']
@@ -200,6 +222,15 @@ def apply_filters(merged_results: list, category: str = 'pokemon') -> list:
             continue
         if 'jumbo' in search_lower:
             continue
+
+        # Magic-specific checks: the collector number must appear in the title,
+        # and foil cards must be sold as foil.
+        if is_magic:
+            if not _title_has_number(row.get('_ext_num', ''), title_lower):
+                continue
+            subtype = (row.get(f'{prefix}.subTypeName') or '').lower()
+            if 'foil' in subtype and not _title_is_foil(title_lower):
+                continue
 
         # Pokemon-specific title/term checks
         if is_pokemon:

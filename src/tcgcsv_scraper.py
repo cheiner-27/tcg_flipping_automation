@@ -93,10 +93,35 @@ def _build_pokemon_search_term(product_name: str, ext_num: str, group_name: str,
 
 # ── MTG search term builder ───────────────────────────────────────────────────
 
+_PROMO_EDITION_PATTERN = re.compile(r'\b(promo|edition)', re.IGNORECASE)
+
+
+def _clean_set_name(group_name: str) -> str:
+    """
+    Trim a set name to its core identifier for use as a quoted phrase when a card
+    has no collector number:
+      1a. drop everything from the first colon onward ("Ravnica: Clue Edition" -> "Ravnica")
+      1b. drop everything from 'Promo'/'Edition' onward ("FNM Promo" -> "FNM")
+    Falls back to the original name if trimming would leave nothing.
+    """
+    name = group_name.split(':')[0]
+    m = _PROMO_EDITION_PATTERN.search(name)
+    if m:
+        name = name[:m.start()]
+    name = name.strip()
+    return name or group_name.strip()
+
+
 def _build_mtg_search_term(product_name: str, ext_num: str, group_name: str,
                             sub_type: str) -> str:
     """Build eBay search term for a Magic: The Gathering card."""
     name = product_name  # MTG card names are already clean — no stripping needed
+
+    # Some product names embed the collector number in parentheses, e.g.
+    # "Lightning Bolt (185)" with Number 185 — drop it so it isn't duplicated.
+    if ext_num:
+        name = name.replace(f'({ext_num})', '')
+        name = ' '.join(name.split())
 
     foil_suffix = ''
     sub_lower = (sub_type or '').lower()
@@ -106,9 +131,12 @@ def _build_mtg_search_term(product_name: str, ext_num: str, group_name: str,
         foil_suffix = ' foil'
 
     if ext_num:
-        term = f'{name} "{ext_num}" {group_name}{foil_suffix}'
+        # Number left unquoted (quoting over-narrows eBay); transform_results
+        # requires it to appear in the listing title instead.
+        term = f'{name} {ext_num} {group_name}{foil_suffix}'
     else:
-        term = f'{name} {group_name}{foil_suffix}'
+        # No collector number: quote the trimmed set name as the disambiguator.
+        term = f'{name} "{_clean_set_name(group_name)}"{foil_suffix}'
 
     return _quote_special_terms(term)
 

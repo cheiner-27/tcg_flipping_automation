@@ -26,14 +26,18 @@ _MAGIC_NAME_EXCLUDE = [
     'Prerelease Pack', 'Promo Pack', 'Tournament Pack', 'Intro Pack',
     'Event Deck', 'Deck Box', 'Deckbox', 'Playmat', 'Sleeves', 'Binder',
     'Dice', 'Display', 'Case', 'Sealed', 'Box Set', 'Box Topper',
-    'Oversized', 'Life Counter', 'Spindown', ' Deck',
+    'Oversized', 'Life Counter', 'Spindown', ' Deck', 'Edition Pack',
+    'Edition Box', 'Countdown Kit', 'Collection:', 'Scene Box', 'Clash Pack',
+    '- Tin'
     # Non-singles
     ' Token', 'Emblem', 'Checklist', 'Art Card', 'Punch Card',
+    # Other
+    'Oversize',
 ]
 
 _MAGIC_GROUP_EXCLUDE_EXACT: set = set()
 
-_MAGIC_GROUP_EXCLUDE_CONTAINS = ['Jumbo', 'Oversize', 'Championship']
+_MAGIC_GROUP_EXCLUDE_CONTAINS = ['Jumbo', 'Oversize', 'Championship', 'Secret Lair']
 
 # ── Per-game lookup tables ────────────────────────────────────────────────────
 
