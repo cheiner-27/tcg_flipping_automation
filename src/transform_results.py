@@ -31,6 +31,13 @@ JUMBO_TERMS      = ['jumbo', 'oversized']
 QUANTITY_TERMS   = ['set of', 'lot of']
 SEARCH_TERM_EXCL = ['diy', 'hand drawn']
 
+# MTG print-variant qualifiers: like 'foil', if one is in the search term the
+# listing title must also contain it (otherwise it's the wrong printing).
+MAGIC_VARIANT_KEYWORDS = [
+    'borderless', 'extended art', 'halo foil', 'foil etched',
+    'textured foil', 'galaxy foil',
+]
+
 MAX_TIME_SECONDS = config.MAX_AUCTION_DAYS * 24 * 3600
 
 
@@ -65,6 +72,11 @@ def _title_has_number(ext_num: str, title_lower: str) -> bool:
 def _title_is_foil(title_lower: str) -> bool:
     """True if the title says 'foil' but not 'non-foil'/'nonfoil'/'non foil'."""
     return 'foil' in re.sub(r'non[\s-]*foil', '', title_lower)
+
+
+def _title_has_required_keywords(search_lower: str, title_lower: str, keywords: list) -> bool:
+    """For each keyword present in the search term, require it in the title."""
+    return all(kw not in search_lower or kw in title_lower for kw in keywords)
 
 
 def _prefix_num_check(search_term: str, title: str, prefix: str) -> bool:
@@ -230,6 +242,8 @@ def apply_filters(merged_results: list, category: str = 'pokemon') -> list:
                 continue
             subtype = (row.get(f'{prefix}.subTypeName') or '').lower()
             if 'foil' in subtype and not _title_is_foil(title_lower):
+                continue
+            if not _title_has_required_keywords(search_lower, title_lower, MAGIC_VARIANT_KEYWORDS):
                 continue
 
         # Pokemon-specific title/term checks

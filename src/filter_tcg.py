@@ -28,7 +28,7 @@ _MAGIC_NAME_EXCLUDE = [
     'Dice', 'Display', 'Case', 'Sealed', 'Box Set', 'Box Topper',
     'Oversized', 'Life Counter', 'Spindown', ' Deck', 'Edition Pack',
     'Edition Box', 'Countdown Kit', 'Collection:', 'Scene Box', 'Clash Pack',
-    '- Tin'
+    '- Tin', 'Commander Kit', 'Beginner Box',
     # Non-singles
     ' Token', 'Emblem', 'Checklist', 'Art Card', 'Punch Card',
     # Other

@@ -114,29 +114,71 @@ def _clean_set_name(group_name: str) -> str:
 
 def _build_mtg_search_term(product_name: str, ext_num: str, group_name: str,
                             sub_type: str) -> str:
-    """Build eBay search term for a Magic: The Gathering card."""
-    name = product_name  # MTG card names are already clean — no stripping needed
+    """Build eBay search term for a Magic: The Gathering card.
 
-    # Some product names embed the collector number in parentheses, e.g.
-    # "Lightning Bolt (185)" with Number 185 — drop it so it isn't duplicated.
+    MTG product names embed qualifiers in parentheses and collector numbers that
+    can be alphanumeric (e.g. '410c') and zero-padded in the name (e.g. '(0410c)').
+    Steps:
+      1. Drop the parenthetical that merely repeats the collector number,
+         tolerating leading zeros, so the number isn't duplicated.
+      2. Decide the foil suffix — but skip it when a foil qualifier is already
+         present in a parenthetical (detected via 'foil)'), e.g. '(Galaxy Foil)'.
+      3. Strip all remaining parentheses/brackets and colons, KEEPING their words
+         so print-variant qualifiers (Borderless, Textured Foil, …) survive for
+         the title-match checks in transform_results.
+      4. Append the set/number, skipping the set name when the card name already
+         contains it (e.g. 'Commander 2015 - Swell the Host').
+      5. Prepend 'MTG' to very short terms (<=3 words) so generic names don't
+         pull cross-game (e.g. Yu-Gi-Oh!) listings.
+    """
+    name = product_name
+
+    # 1. Drop the parenthetical that merely repeats the collector number, e.g.
+    #    ext_num '410c' against name '... (0410c) ...' (tolerate leading zeros).
     if ext_num:
-        name = name.replace(f'({ext_num})', '')
-        name = ' '.join(name.split())
+        name = re.sub(r'\(\s*0*' + re.escape(ext_num) + r'\s*\)', '', name,
+                      flags=re.IGNORECASE)
 
-    foil_suffix = ''
+    # 2. A foil qualifier already in a parenthetical (e.g. '(Silver Scroll Foil)')
+    #    ends in 'foil)'. When present, don't append our own ' foil' suffix.
     sub_lower = (sub_type or '').lower()
-    if 'etched' in sub_lower:
+    if 'foil)' in product_name.lower():
+        foil_suffix = ''
+    elif 'etched' in sub_lower:
         foil_suffix = ' etched foil'
     elif 'foil' in sub_lower:
         foil_suffix = ' foil'
+    else:
+        foil_suffix = ''
 
+    # 3. Strip remaining parentheses/brackets and colons, keeping inner words.
+    for ch in '()[]:':
+        name = name.replace(ch, ' ')
+    name = ' '.join(name.split())
+
+    clean_group = ' '.join(group_name.replace(':', ' ').split())
+
+    # 4. Assemble. Skip the set name when the card name already contains it.
     if ext_num:
         # Number left unquoted (quoting over-narrows eBay); transform_results
         # requires it to appear in the listing title instead.
-        term = f'{name} {ext_num} {group_name}{foil_suffix}'
+        if clean_group.lower() in name.lower():
+            term = f'{name} {ext_num}{foil_suffix}'
+        else:
+            term = f'{name} {ext_num} {clean_group}{foil_suffix}'
     else:
         # No collector number: quote the trimmed set name as the disambiguator.
-        term = f'{name} "{_clean_set_name(group_name)}"{foil_suffix}'
+        set_phrase = _clean_set_name(group_name)
+        if set_phrase.lower() in name.lower():
+            term = f'{name}{foil_suffix}'
+        else:
+            term = f'{name} "{set_phrase}"{foil_suffix}'
+
+    term = ' '.join(term.split())
+
+    # 5. Disambiguate very short/generic terms that collide with other games.
+    if len(term.split()) <= 3:
+        term = f'MTG {term}'
 
     return _quote_special_terms(term)
 
