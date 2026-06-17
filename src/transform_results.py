@@ -35,7 +35,7 @@ SEARCH_TERM_EXCL = ['diy', 'hand drawn']
 # listing title must also contain it (otherwise it's the wrong printing).
 MAGIC_VARIANT_KEYWORDS = [
     'borderless', 'extended art', 'halo foil', 'foil etched',
-    'textured foil', 'galaxy foil',
+    'textured foil', 'galaxy foil', 'surge foil',
 ]
 
 MAX_TIME_SECONDS = config.MAX_AUCTION_DAYS * 24 * 3600
@@ -61,12 +61,20 @@ def _title_has_number(ext_num: str, title_lower: str) -> bool:
     number (tolerating leading zeros and '#'), e.g. '78' matches '78', '#78',
     '078', '78/264' — but not '780' or '1782'. Cards with no numeric ext_num
     always pass.
+
+    Magic collector numbers can carry a letter suffix (e.g. '410c', '0147c').
+    The suffix is honored so variants don't cross-match:
+      * ext_num '147c' matches '147c' or a bare '147', but NOT '147d';
+      * ext_num '147' (no suffix) matches '147' but NOT '147c' (a variant).
     """
-    m = re.search(r'\d+', ext_num or '')
+    m = re.search(r'(\d+)([a-z])?', (ext_num or '').lower())
     if not m:
         return True
-    num = str(int(m.group()))
-    return bool(re.search(r'(?<!\d)0*' + num + r'(?!\d)', title_lower))
+    num = str(int(m.group(1)))
+    suffix = m.group(2) or ''
+    # A bare number is always allowed; a wrong letter suffix is rejected.
+    tail = (f'(?:{suffix})?' if suffix else '') + r'(?![0-9a-z])'
+    return bool(re.search(r'(?<!\d)0*' + num + tail, title_lower))
 
 
 def _title_is_foil(title_lower: str) -> bool:
@@ -77,6 +85,73 @@ def _title_is_foil(title_lower: str) -> bool:
 def _title_has_required_keywords(search_lower: str, title_lower: str, keywords: list) -> bool:
     """For each keyword present in the search term, require it in the title."""
     return all(kw not in search_lower or kw in title_lower for kw in keywords)
+
+
+# Words ignored when matching Magic set names against titles: colors, grades,
+# fillers, and generic MTG vocabulary that don't identify a specific set.
+_SET_STOPWORDS = set(
+    'the of and a an or to for from with in on at by magic mtg card cards game '
+    'gathering set sets edition tcg commander deck decks promo promos league duel '
+    'core box pack series collection special white blue black red green colorless '
+    'mint near rare uncommon common mythic foil nonfoil english playset bonus custom '
+    'case sharp corners clean duty old school free regular lightly played'.split()
+)
+
+
+def _set_tokens(text: str) -> set:
+    """Word tokens from a set name / title, keeping 4-digit years and words >=4
+    chars that aren't set-name stopwords."""
+    out = set()
+    for w in re.split(r'[^a-z0-9]+', (text or '').lower()):
+        if not w:
+            continue
+        if re.fullmatch(r'\d{4}', w):
+            out.add(w)
+        elif len(w) >= 4 and w not in _SET_STOPWORDS:
+            out.add(w)
+    return out
+
+
+def build_set_token_model(tcg_data: list) -> dict:
+    """
+    From all TCG group (set) names, find tokens that uniquely identify ONE set.
+
+    Returns {'owner': {token: group}, 'group_pos': {group: set(tokens)}}, used to
+    recognize a card's own set in a listing title (a positive match signal) and to
+    detect a *different* set named in the title (a wrong-printing signal). Tokens
+    shared by multiple sets are dropped, so only distinctive set words remain.
+    """
+    from collections import defaultdict
+    tok_groups: dict = defaultdict(set)
+    groups = {row['group'] for row in tcg_data if row.get('group')}
+    for g in groups:
+        for w in _set_tokens(g):
+            tok_groups[w].add(g)
+    owner = {w: next(iter(gs)) for w, gs in tok_groups.items() if len(gs) == 1}
+    group_pos = {g: {w for w in _set_tokens(g) if w in owner} for g in groups}
+    return {'owner': owner, 'group_pos': group_pos}
+
+
+def _title_set_signals(title_lower: str, group: str, card_name: str, model: dict):
+    """
+    Return (names_our_set, names_other_set) for a Magic listing title.
+
+    Tokens that appear in the card's own name are ignored (so a card called
+    'The Ur-Dragon' isn't read as the set "Dragon's Maze"), and 4-digit years are
+    ignored for the other-set signal (to avoid e.g. an SDCC '2016' reading as
+    "Commander 2016").
+    """
+    title_toks = _set_tokens(title_lower)
+    card_toks = {w for w in re.split(r'[^a-z0-9]+', (card_name or '').lower()) if len(w) >= 3}
+    pos = model['group_pos'].get(group, set()) - card_toks
+    has_our = bool(pos & title_toks)
+    owner = model['owner']
+    has_other = any(
+        not re.fullmatch(r'\d{4}', w) and w not in card_toks
+        and owner.get(w) and owner[w] != group
+        for w in title_toks
+    )
+    return has_our, has_other
 
 
 def _prefix_num_check(search_term: str, title: str, prefix: str) -> bool:
@@ -186,17 +261,25 @@ def merge_with_tcg(ebay_results: list, tcg_data: list, category: str) -> list:
             # Internal — excluded from CSV via extrasaction='ignore'
             '_time_remaining_seconds': time_secs,
             '_ext_num':             tcg.get('ext_num', ''),
+            '_set_group':           tcg.get('group', ''),
+            '_card_name':           tcg.get('name', ''),
         })
 
     print(f"Merged {len(output)} eBay results with TCG data")
     return output
 
 
-def apply_filters(merged_results: list, category: str = 'pokemon') -> list:
+def apply_filters(merged_results: list, category: str = 'pokemon',
+                  set_model: dict | None = None) -> list:
     """
     Apply all content and time filters to already-merged results.
     Items without a known end date (pure BIN listings) are kept — only
     items with a confirmed end date beyond MAX_AUCTION_DAYS are dropped.
+
+    set_model (Magic only): output of build_set_token_model(tcg_data). When
+    provided, a listing is kept if its title shows the collector number OR a
+    distinctive word from the card's set, AND does not name a different set.
+    When omitted, the collector number alone is required (legacy behavior).
     """
     output = []
     is_pokemon = category == 'pokemon'
@@ -238,7 +321,17 @@ def apply_filters(merged_results: list, category: str = 'pokemon') -> list:
         # Magic-specific checks: the collector number must appear in the title,
         # and foil cards must be sold as foil.
         if is_magic:
-            if not _title_has_number(row.get('_ext_num', ''), title_lower):
+            has_number = _title_has_number(row.get('_ext_num', ''), title_lower)
+            if set_model is not None:
+                has_set, names_other = _title_set_signals(
+                    title_lower, row.get('_set_group', ''), row.get('_card_name', ''), set_model)
+                # Right card needs its number OR its set in the title …
+                if not (has_number or has_set):
+                    continue
+                # … and must not advertise a different set (wrong reprint).
+                if names_other:
+                    continue
+            elif not has_number:
                 continue
             subtype = (row.get(f'{prefix}.subTypeName') or '').lower()
             if 'foil' in subtype and not _title_is_foil(title_lower):

@@ -159,15 +159,41 @@ against the lowercased listing title unless noted.
 quantity lots, and `diy`/`hand drawn` (matched against the search term).
 
 **Magic only:**
+- **Set disambiguation (the "R3" rule)** — the hard part, because Magic has many
+  reprints/variants of the same card+number across sets. A listing is kept only if:
+  1. its title shows **the collector number `_title_has_number` OR a distinctive
+     word from the card's set** (`_title_set_signals` → `has_our_set`), **and**
+  2. its title does **not** name a *different* set (`names_other_set`).
+
+  Why number-OR-set: Magic sellers omit the bare collector number constantly but
+  almost always name the set, so requiring the number alone tanked recall (it was
+  the single biggest over-filter — see the funnel discussion). Set words are the
+  more reliable signal. The "names a different set" check then catches wrong-print
+  false positives the number alone lets through (e.g. a *Grand Prix* promo or
+  *Prerelease* card whose number collides with a base-set card, or *Unlimited* vs
+  *Beta* old-border cards). On the 2026-06 data this took the disambiguation step
+  from 138 → 192 survivors *and* removed real wrong-printing FPs.
+
+  The set model is `build_set_token_model(tcg_data)`, built in `main.py` and passed
+  to `apply_filters(set_model=...)` for Magic only (Pokémon passes `None`, which
+  falls back to the legacy number-only rule). It keeps only **tokens that uniquely
+  identify one set** (a word in 2+ set names is dropped as ambiguous), ignores the
+  card's own name tokens (so the card *The Ur-Dragon* isn't read as set
+  *Dragon's Maze*), ignores 4-digit years for the other-set signal, and ignores
+  colors/grades/filler via `_SET_STOPWORDS`. Caveats: 176/355 sets have no unique
+  word (e.g. "Commander 2015") → they fall back to number-only; set abbreviations
+  (MH3, LTR) aren't matched yet — a name→code map would recover more.
 - `_title_has_number` — the collector number must appear in the title (tolerates
   leading zeros and `#`, e.g. `78` matches `#78`/`078`/`78/264` but not `780`).
+  Honors an alphanumeric suffix: ext `410c` matches `410c` or bare `410` but **not**
+  `410d`; ext `137` (no suffix) matches `137` but not the variant `137c`.
 - `_title_is_foil` — if the subtype is foil, the title must say "foil" (and not
   "non-foil").
 - `_title_has_required_keywords` against **`MAGIC_VARIANT_KEYWORDS`** — for each
   of `borderless`, `extended art`, `halo foil`, `foil etched`, `textured foil`,
-  `galaxy foil`: **if it's in the search term, it must be in the title.** This is
-  the print-variant equivalent of the foil check. It works *because* step 3 of the
-  MTG builder keeps the parenthetical words in the search term.
+  `galaxy foil`, `surge foil`: **if it's in the search term, it must be in the
+  title.** This is the print-variant equivalent of the foil check. It works
+  *because* step 3 of the MTG builder keeps the parenthetical words in the search term.
 
   > Etched nuance: the builder's *suffix* is `etched foil` (subtype-derived),
   > while the keyword is `foil etched` (the order seen in names like
@@ -305,6 +331,10 @@ Under `C:\Users\chrsh\Documents\01. Programming\06. TCG Arb\`:
   The leading-zero-tolerant regex in step 1 of the MTG builder is what fixes this.
 - **Keeping parenthetical words is intentional** — the `MAGIC_VARIANT_KEYWORDS`
   title check depends on `Borderless`/`Textured Foil`/etc. staying in the term.
+- **Magic match precision lives in the "R3" set rule**, not the collector number —
+  see the Title/content filters section. Number-OR-set + not-other-set; the set
+  model is built in `main.py` from the *full* `tcg_data` (so it knows every set
+  name) and passed to `apply_filters`. Pokémon passes `None` and is unaffected.
 - **`foil)` (not bare `foil`)** is the signal that a foil qualifier is already in
   the name, so we don't double-append `foil`.
 - **The CSV → app upload is manual.** Nothing automatically pushes the artifact

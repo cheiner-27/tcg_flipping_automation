@@ -13,7 +13,7 @@ import config
 from tcgcsv_scraper import fetch_tcg_data
 from filter_tcg import filter_tcg_data
 from ebay_search import search_all_terms, get_oauth_token, fetch_item_images
-from transform_results import merge_with_tcg, apply_filters
+from transform_results import merge_with_tcg, apply_filters, build_set_token_model
 from image_analysis import find_best_back
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'output')
@@ -262,7 +262,8 @@ def main():
     _save_csv(merged, os.path.join(OUTPUT_DIR, f'{cat}_results_raw.csv'), merged_fields)
 
     print('\n=== Step 6: Apply filters ===')
-    final = apply_filters(merged, category=cat)
+    set_model = build_set_token_model(tcg_data) if cat == 'magic' else None
+    final = apply_filters(merged, category=cat, set_model=set_model)
     final = _filter_dismissed_listings(final, dismissed_listings)
 
     print(f'\n=== Step 7: Fetch back images for {len(final)} profitable results ===')
