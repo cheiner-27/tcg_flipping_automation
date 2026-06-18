@@ -45,9 +45,9 @@ def fetch_item_images(item_id: str, token: str) -> list[str]:
 
     for attempt in range(3):
         try:
-            r = requests.get(url, headers=headers, timeout=30)
+            r = requests.get(url, headers=headers, timeout=(10, 30))
             break
-        except requests.exceptions.ConnectionError:
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
             if attempt == 2:
                 return []
             time.sleep(5 * (attempt + 1))
@@ -134,20 +134,24 @@ def _search_term_results(search_term: str, token: str) -> list:
         params['limit'] = str(limit)
         params['offset'] = str(offset)
 
+        r = None
         for attempt in range(4):
             try:
                 r = requests.get(
                     'https://api.ebay.com/buy/browse/v1/item_summary/search',
                     headers=headers,
                     params=params,
-                    timeout=30,
+                    timeout=(10, 60),  # (connect, read); search reads can be slow
                 )
                 break
-            except requests.exceptions.ConnectionError as e:
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                # ReadTimeout/ConnectTimeout are Timeout (not ConnectionError) — catch
+                # both so a slow eBay response retries instead of killing the run.
                 if attempt == 3:
-                    raise
+                    print(f"  Giving up on '{search_term}' after 4 network errors; skipping: {e}")
+                    return results  # skip this term, keep all prior progress
                 wait = 2 ** attempt * 5
-                print(f"  Connection error for '{search_term}', retrying in {wait}s: {e}")
+                print(f"  Network error for '{search_term}' (attempt {attempt + 1}/4), retrying in {wait}s: {e}")
                 time.sleep(wait)
         if r.status_code == 429:
             retry_after = int(r.headers.get('Retry-After', 60))
@@ -229,7 +233,11 @@ def search_all_terms(search_terms: list) -> list:
 
     for i, term in enumerate(search_terms, 1):
         print(f"  [{i}/{total}] {term}")
-        all_results.extend(_search_term_results(term, token))
+        try:
+            all_results.extend(_search_term_results(term, token))
+        except requests.exceptions.RequestException as e:
+            # Never let one term abort the whole run — log and move on.
+            print(f"  Skipped '{term}' after network error: {e}")
         time.sleep(0.25)
 
     print(f"eBay search complete: {len(all_results)} raw results")
