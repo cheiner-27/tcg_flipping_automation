@@ -35,7 +35,7 @@ SEARCH_TERM_EXCL = ['diy', 'hand drawn']
 # listing title must also contain it (otherwise it's the wrong printing).
 MAGIC_VARIANT_KEYWORDS = [
     'borderless', 'extended art', 'halo foil', 'foil etched',
-    'textured foil', 'galaxy foil', 'surge foil',
+    'textured foil', 'galaxy foil', 'surge foil', 'confetti foil',
 ]
 
 MAX_TIME_SECONDS = config.MAX_AUCTION_DAYS * 24 * 3600
@@ -75,6 +75,27 @@ def _title_has_number(ext_num: str, title_lower: str) -> bool:
     # A bare number is always allowed; a wrong letter suffix is rejected.
     tail = (f'(?:{suffix})?' if suffix else '') + r'(?![0-9a-z])'
     return bool(re.search(r'(?<!\d)0*' + num + tail, title_lower))
+
+
+# Collector-number tokens in a listing title. We only trust strong signals so
+# that years (1994), set totals (/350) and vendor stock ids ('ID# 517456') are
+# not mistaken for a card number:
+#   * '#N'  — the '#' must NOT follow a letter/digit, so 'ID# 517456' is ignored
+#   * 'N/M' — both sides captured (the printed number can be on either side,
+#             e.g. '(2016/20)'); leading zeros tolerated
+# Numbers are capped at 4 digits, which also drops 6-digit stock ids and keeps
+# every real collector number.
+_HASH_NUM  = re.compile(r'(?<![a-z0-9])#\s*0*(\d{1,4})(?!\d)')
+_SLASH_NUM = re.compile(r'(?<![a-z0-9/])0*(\d{1,4})\s*/\s*0*(\d{1,4})(?!\d)')
+
+
+def _title_collector_numbers(title_lower: str) -> set:
+    """Collector-number candidates parsed from a listing title (see patterns)."""
+    nums = {int(m) for m in _HASH_NUM.findall(title_lower)}
+    for a, b in _SLASH_NUM.findall(title_lower):
+        nums.add(int(a))
+        nums.add(int(b))
+    return nums
 
 
 def _title_is_foil(title_lower: str) -> bool:
@@ -321,18 +342,30 @@ def apply_filters(merged_results: list, category: str = 'pokemon',
         # Magic-specific checks: the collector number must appear in the title,
         # and foil cards must be sold as foil.
         if is_magic:
-            has_number = _title_has_number(row.get('_ext_num', ''), title_lower)
+            ext_num = row.get('_ext_num', '')
+            has_number = _title_has_number(ext_num, title_lower)
+            # Alphanumeric collector numbers (e.g. '17c', '410d') only differ from
+            # their sibling variants by the number itself, so a set-name match
+            # can't be allowed to rescue them — the number must be in the title.
+            is_alnum_num = bool(re.search(r'\d', ext_num)) and bool(re.search(r'[a-z]', ext_num.lower()))
             if set_model is not None:
                 has_set, names_other = _title_set_signals(
                     title_lower, row.get('_set_group', ''), row.get('_card_name', ''), set_model)
-                # Right card needs its number OR its set in the title …
-                if not (has_number or has_set):
+                # Right card needs its number (always, for alphanumeric numbers)
+                # OR its set in the title …
+                if not (has_number or (has_set and not is_alnum_num)):
                     continue
                 # … and must not advertise a different set (wrong reprint).
                 if names_other:
                     continue
             elif not has_number:
                 continue
+            # If the title carries plain collector numbers and none matches this
+            # card's (numeric) number, it's a different card — drop it.
+            if ext_num.isdigit():
+                title_nums = _title_collector_numbers(title_lower)
+                if title_nums and int(ext_num) not in title_nums:
+                    continue
             subtype = (row.get(f'{prefix}.subTypeName') or '').lower()
             if 'foil' in subtype and not _title_is_foil(title_lower):
                 continue

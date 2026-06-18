@@ -53,8 +53,8 @@ jobs:
           TCG_CATEGORY: ${{ steps.pick_category.outputs.category }}
           POKEMON_MIN_PRICE: '30'
           POKEMON_MAX_PRICE: '3000'
-          MAGIC_MIN_PRICE: '50'
-          MAGIC_MAX_PRICE: '1100'
+          MAGIC_MIN_PRICE: '40'
+          MAGIC_MAX_PRICE: '2000'
           BUYER_COUNTRY: US
           BUYER_ZIP: '21015'
           MAX_AUCTION_DAYS: '2'
